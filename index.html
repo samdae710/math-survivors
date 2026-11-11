@@ -1,0 +1,4297 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>MATH Survivor [3단계: 몬스터 수정] - 3D 몬스터 2종 추가</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #070b19;
+      color: #f8fafc;
+      font-family: 'Noto Sans KR', 'Inter', sans-serif;
+    }
+    canvas#threeCanvas {
+      position: fixed;
+      inset: 0;
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 1;
+    }
+    canvas#gameCanvas {
+      position: fixed;
+      inset: 0;
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      touch-action: none;
+      z-index: 2;
+    }
+    .neon-border {
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.35), inset 0 0 15px rgba(56, 189, 248, 0.15);
+    }
+    .neon-gold {
+      box-shadow: 0 0 22px rgba(250, 204, 21, 0.55), inset 0 0 15px rgba(250, 204, 21, 0.25);
+    }
+    .neon-purple {
+      box-shadow: 0 0 20px rgba(168, 85, 247, 0.45), inset 0 0 12px rgba(168, 85, 247, 0.2);
+    }
+    /* Custom Fraction Display */
+    .math-frac {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      vertical-align: middle;
+      margin: 0 0.2em;
+      font-weight: 700;
+      line-height: 1.05;
+    }
+    .math-frac > .num {
+      border-bottom: 2px solid currentColor;
+      padding: 0 0.25em 1px;
+      font-size: 0.9em;
+    }
+    .math-frac > .den {
+      padding: 1px 0.25em 0;
+      font-size: 0.9em;
+    }
+    .math-mixed {
+      display: inline-flex;
+      align-items: center;
+      vertical-align: middle;
+      gap: 2px;
+      font-weight: 800;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 4px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: rgba(56, 189, 248, 0.45);
+      border-radius: 4px;
+    }
+    @keyframes pulseGlow {
+      0%, 100% { transform: scale(1); filter: brightness(1); }
+      50% { transform: scale(1.03); filter: brightness(1.18); }
+    }
+    .evolve-card-anim {
+      animation: pulseGlow 1.8s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="relative w-screen h-screen overflow-hidden bg-slate-950 select-none">
+
+  <!-- 3D WORLD & STUDENT MODEL CANVAS (THREE.JS) + 2D OVERLAY CANVAS -->
+  <canvas id="threeCanvas"></canvas>
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- TOP HUD -->
+  <div id="hudContainer" class="hidden fixed top-0 left-0 right-0 z-20 pointer-events-none p-2 sm:p-3 flex flex-col gap-1.5">
+    <!-- Experience Bar -->
+    <div class="w-full max-w-6xl mx-auto flex items-center gap-2 bg-slate-900/90 border border-cyan-500/40 rounded-full px-3 py-1 backdrop-blur-md pointer-events-auto shadow-lg">
+      <div class="flex items-center gap-1.5 shrink-0">
+        <span class="px-2 py-0.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 text-xs sm:text-sm font-black tracking-wide text-white shadow">
+          Lv.<span id="hudLevel">1</span>
+        </span>
+        <span class="text-[11px] text-cyan-300 font-semibold hidden sm:inline">/ 100</span>
+      </div>
+      <div class="relative flex-1 h-3 sm:h-3.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+        <div id="hudXpBar" class="h-full bg-gradient-to-r from-cyan-400 via-sky-500 to-indigo-500 transition-all duration-200" style="width: 0%"></div>
+        <div id="hudXpText" class="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white drop-shadow">
+          0 / 5 EXP
+        </div>
+      </div>
+      <span id="hudUnitFilterBadge" class="hidden md:inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-950/90 text-indigo-300 border border-indigo-500/40 shrink-0">
+        전체 단원
+      </span>
+    </div>
+
+    <!-- Second Row: Stats + Inventory + Quick Controls -->
+    <div class="w-full max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <!-- Left: Active (6) & Passive (6) Slots -->
+      <div class="flex flex-col sm:flex-row items-start sm:items-center gap-1.5 bg-slate-900/85 border border-slate-700/80 rounded-xl p-1.5 backdrop-blur-md pointer-events-auto">
+        <div class="flex items-center gap-1">
+          <span class="text-[10px] font-bold text-cyan-400 px-1">무기</span>
+          <div id="hudActiveSlots" class="flex items-center gap-1"></div>
+        </div>
+        <div class="hidden sm:block w-px h-6 bg-slate-700 mx-0.5"></div>
+        <div class="flex items-center gap-1">
+          <span class="text-[10px] font-bold text-amber-400 px-1">패시브</span>
+          <div id="hudPassiveSlots" class="flex items-center gap-1"></div>
+        </div>
+      </div>
+
+      <!-- Center: Timer, Kills, Quiz Accuracy -->
+      <div class="flex items-center gap-2 sm:gap-3 bg-slate-900/85 border border-slate-700/80 rounded-xl px-3 py-1.5 backdrop-blur-md pointer-events-auto">
+        <div class="flex items-center gap-1">
+          <span class="text-xs">⏱️</span>
+          <span id="hudTimer" class="font-mono text-sm sm:text-base font-black text-amber-300">00:00</span>
+        </div>
+        <div class="w-px h-4 bg-slate-700"></div>
+        <div class="flex items-center gap-1">
+          <span class="text-xs">💀</span>
+          <span id="hudKills" class="font-mono text-xs sm:text-sm font-bold text-rose-300">0</span>
+        </div>
+        <div class="w-px h-4 bg-slate-700"></div>
+        <div class="flex items-center gap-1" title="수학 문제 정답률">
+          <span class="text-xs">📐</span>
+          <span id="hudAccuracy" class="font-mono text-xs sm:text-sm font-bold text-emerald-300">100%</span>
+        </div>
+      </div>
+
+      <!-- Right: Action Buttons -->
+      <div class="flex items-center gap-1.5 pointer-events-auto">
+        <button id="btnQuickLevelUp" class="px-2.5 py-1.5 rounded-lg bg-cyan-600/90 hover:bg-cyan-500 text-white font-bold text-xs border border-cyan-400/50 shadow flex items-center gap-1 transition" title="즉시 수학 퀴즈 & 레벨업 체험">
+          <span>⚡</span><span class="hidden sm:inline">즉시 레벨업</span>
+        </button>
+        <button id="btnSummonBoss" class="px-2.5 py-1.5 rounded-lg bg-purple-700/90 hover:bg-purple-600 text-white font-bold text-xs border border-purple-400/50 shadow flex items-center gap-1 transition" title="중간 보스(다각형 보스) 즉시 소환">
+          <span>👾</span><span class="hidden md:inline">보스 소환</span>
+        </button>
+        <button id="btnOpenComboGuide" class="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-amber-300 font-bold text-xs border border-amber-500/40 shadow flex items-center gap-1 transition" title="무기 진화 조합표">
+          <span>📖</span><span class="hidden sm:inline">조합표</span>
+        </button>
+        <button id="btnOpenReportHud" class="px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-emerald-300 font-bold text-xs border border-emerald-500/40 shadow flex items-center gap-1 transition" title="오답 노트 & 전투 리포트">
+          <span>📊</span><span class="hidden sm:inline">오답노트</span>
+        </button>
+        <button id="btnToggleSound" class="p-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-600 text-xs transition" title="효과음 켜기/끄기">
+          🔊
+        </button>
+        <button id="btnPauseGame" class="p-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-600 text-xs transition" title="일시정지 및 설정">
+          ⏸️
+        </button>
+      </div>
+    </div>
+
+    <!-- Boss Alert / Boss HP Bar + Shield Quiz Trigger -->
+    <div id="bossHudBanner" class="hidden w-full max-w-2xl mx-auto mt-1 bg-slate-950/90 border-2 border-rose-500/80 rounded-xl p-2 backdrop-blur-md pointer-events-auto shadow-2xl">
+      <div class="flex items-center justify-between gap-2 mb-1">
+        <div class="flex items-center gap-2">
+          <span class="text-base animate-bounce">👑</span>
+          <span id="bossNameText" class="text-xs sm:text-sm font-black text-rose-300">정다각형 차원 지배자 (BOSS)</span>
+          <span id="bossShieldBadge" class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-400/50">
+            🛡️ 다각형 결계 활성화 (피해 75% 감소)
+          </span>
+        </div>
+        <button id="btnBreakBossShield" class="px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs shadow-lg animate-pulse">
+          🔓 넓이 공식으로 결계 파괴!
+        </button>
+      </div>
+      <div class="w-full h-3 bg-slate-800 rounded-full overflow-hidden border border-rose-900">
+        <div id="bossHpBar" class="h-full bg-gradient-to-r from-rose-600 via-red-500 to-orange-400 transition-all duration-150" style="width: 100%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESUME COUNTDOWN / INVINCIBILITY BANNER -->
+  <div id="countdownOverlay" class="hidden fixed inset-0 z-30 pointer-events-none flex flex-col items-center justify-center">
+    <div class="bg-slate-900/80 border-2 border-cyan-400 rounded-3xl px-8 py-5 text-center backdrop-blur-md shadow-2xl">
+      <div class="text-xs font-bold text-cyan-300 uppercase tracking-widest mb-1">전투 복귀 준비!</div>
+      <div id="countdownNumber" class="text-6xl font-black text-white drop-shadow-[0_0_20px_rgba(56,189,248,0.9)]">3</div>
+      <div id="countdownSubtext" class="text-xs text-amber-300 font-semibold mt-1">⚡ 정답 에너지 파동 & 3초 무적 보호막 발동!</div>
+    </div>
+  </div>
+
+  <!-- VIRTUAL JOYSTICK INDICATOR (Mobile / Touch / Drag) -->
+  <div id="joystickHint" class="hidden fixed bottom-4 left-4 z-10 pointer-events-none flex items-center gap-2 bg-slate-900/70 border border-slate-700/70 rounded-full px-3 py-1.5 text-xs text-slate-300 backdrop-blur-sm">
+    <span>🕹️</span>
+    <span>WASD / 방향키 또는 화면 드래그로 이동 (무기 자동 발사)</span>
+  </div>
+
+  <!-- ==================== 1. LOBBY / START SCREEN MODAL ==================== -->
+  <div id="lobbyModal" class="fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-md overflow-y-auto">
+    <div class="w-full max-w-4xl bg-slate-900/95 border-2 border-cyan-500/50 rounded-3xl p-6 sm:p-8 neon-border my-auto max-h-[95vh] overflow-y-auto custom-scroll">
+      <!-- Header -->
+      <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
+        <div>
+          <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-sm font-extrabold mb-2">
+            <span>🎓 초등 5학년 1학기 수학</span>
+          </div>
+          <h1 class="text-4xl sm:text-6xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-400 to-purple-400">
+            MATH SURVIVOR
+          </h1>
+        </div>
+        <div class="flex flex-wrap gap-2.5 shrink-0">
+          <button id="btnLobbyCombo" class="px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border-2 border-amber-400/60 text-amber-300 font-black text-sm sm:text-base flex items-center gap-2 transition shadow-md">
+            <span>⚔️</span><span>6쌍 진화 조합표</span>
+          </button>
+          <button id="btnLobbyWrongNote" class="px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border-2 border-emerald-400/60 text-emerald-300 font-black text-sm sm:text-base flex items-center gap-2 transition shadow-md">
+            <span>📓</span><span>오답 노트 도감</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Unit Selection Mode (단원 집중 모드) -->
+      <div class="mt-6">
+        <div class="mb-3">
+          <label class="text-lg sm:text-xl font-black text-cyan-300 flex items-center gap-2">
+            <span>📚 출제 단원 선택</span>
+          </label>
+        </div>
+        <div id="unitSelectorGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Game Pace & Evolution Condition Options -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6 bg-slate-950/70 border border-slate-800 rounded-2xl p-4 sm:p-5">
+        <div>
+          <div class="text-sm sm:text-base font-black text-amber-300 mb-2.5">⚡ 성장 템포</div>
+          <div class="grid grid-cols-2 gap-2.5" id="paceModeGroup">
+            <button type="button" data-pace="fast" class="pace-btn px-4 py-3.5 rounded-xl border-2 border-cyan-400 bg-cyan-500/20 text-white text-sm sm:text-base font-black text-center transition">
+              🚀 경쾌한 템포 (추천)
+            </button>
+            <button type="button" data-pace="standard" class="pace-btn px-4 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-slate-300 text-sm sm:text-base font-black text-center transition">
+              🛡️ 정통 서바이버
+            </button>
+          </div>
+        </div>
+        <div>
+          <div class="text-sm sm:text-base font-black text-purple-300 mb-2.5">🌟 무기 진화 조건</div>
+          <div class="grid grid-cols-2 gap-2.5" id="evoRuleGroup">
+            <button type="button" data-evorule="fast" class="evorule-btn px-4 py-3.5 rounded-xl border-2 border-purple-400 bg-purple-500/20 text-white text-sm sm:text-base font-black text-center transition">
+              ✨ 쾌속 진화형 (추천)
+            </button>
+            <button type="button" data-evorule="strict" class="evorule-btn px-4 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-slate-300 text-sm sm:text-base font-black text-center transition">
+              🔥 마스터 진화형 (원안)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Start Game CTA -->
+      <div class="mt-7 flex items-center justify-center">
+        <button id="btnStartGame" class="w-full py-4 sm:py-5 rounded-2xl bg-gradient-to-r from-cyan-500 via-sky-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-black text-xl sm:text-2xl shadow-xl shadow-cyan-500/25 transform hover:-translate-y-0.5 transition flex items-center justify-center gap-3">
+          <span>🚀 전투 출격하기 (START)</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 2. LEVEL-UP 3-CARD SELECTION MODAL ==================== -->
+  <div id="levelUpModal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-md overflow-y-auto">
+    <div class="w-full max-w-4xl bg-slate-900 border-2 border-amber-400/70 rounded-3xl p-4 sm:p-6 neon-gold my-auto max-h-[95vh] overflow-y-auto custom-scroll">
+      <div class="flex items-center justify-between gap-2 mb-5 pb-3 border-b border-slate-800">
+        <h2 id="levelUpTitle" class="text-2xl sm:text-4xl font-black text-white">
+          ⚡ LEVEL <span class="text-amber-400">2</span> 능력 선택
+        </h2>
+        <button id="btnLevelUpViewCombo" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/50 font-black text-sm transition">
+          📖 진화 조합표 보기
+        </button>
+      </div>
+
+      <!-- 3 Cards Grid -->
+      <div id="levelUpCardsContainer" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Populated dynamically -->
+      </div>
+      <div id="levelUpPairHint" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- ==================== 3. MATH QUIZ MODAL (WITH SCRATCHPAD & KEYPAD TOGGLE) ==================== -->
+  <div id="quizModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/90 backdrop-blur-md overflow-y-auto">
+    <div class="w-full max-w-5xl bg-slate-900 border-2 border-cyan-400/80 rounded-3xl p-4 sm:p-6 neon-border my-auto max-h-[96vh] overflow-y-auto custom-scroll">
+      <!-- Top Bar: Unit Badge, Difficulty, Selected Card Preview, Mode Toggle -->
+      <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
+        <div class="flex flex-wrap items-center gap-2">
+          <span id="quizUnitBadge" class="px-3 py-1 rounded-full bg-cyan-500/20 border border-cyan-400/50 text-cyan-300 text-xs font-extrabold">
+            1단원: 자연수의 혼합 계산
+          </span>
+          <span id="quizDiffBadge" class="px-2.5 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-xs font-bold">
+            기본 문제 (Lv.1~4)
+          </span>
+          <span id="quizRewardBadge" class="px-2.5 py-1 rounded-full bg-purple-500/20 border border-purple-400/40 text-purple-200 text-xs font-bold">
+            보상: 사칙연산 마법탄 Lv.2
+          </span>
+        </div>
+
+        <!-- Input Mode Toggle: 4-Choice vs Keypad -->
+        <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-700">
+          <button id="btnModeChoice" type="button" class="px-3 py-1 rounded-lg text-xs font-bold bg-cyan-600 text-white transition">
+            🔢 4지선다 객관식
+          </button>
+          <button id="btnModeKeypad" type="button" class="px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition">
+            ⌨️ 숫자 패드 단답형
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Content: Left = Question & Answers, Right = Scratchpad Canvas -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mt-4">
+        <!-- Left Column (7 cols): Problem + Hint + Answer Area -->
+        <div class="lg:col-span-7 flex flex-col justify-between gap-3">
+          <!-- Question Box -->
+          <div class="bg-slate-950/90 border border-slate-800 rounded-2xl p-4 sm:p-5">
+            <div class="flex items-center justify-between text-xs text-slate-400 mb-2">
+              <span id="quizAttemptStatus" class="font-bold text-emerald-400">🎯 1차 시도 (정답 시 충격파 + 3초 무적 보너스!)</span>
+              <span id="quizSpacedRepBadge" class="hidden px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[11px] font-bold">🔄 오답 복습 문제</span>
+            </div>
+            <div id="quizQuestionText" class="text-lg sm:text-xl font-extrabold text-white leading-relaxed break-keep">
+              문제 텍스트가 여기에 표시됩니다.
+            </div>
+            <!-- Optional Visual Diagram Container (for Unit 3 Tables or Unit 6 Polygons) -->
+            <div id="quizDiagramBox" class="hidden mt-3 p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center"></div>
+          </div>
+
+          <!-- Hint Box (Hidden until 1st wrong answer, or toggleable) -->
+          <div id="quizHintBox" class="hidden bg-amber-950/60 border-2 border-amber-400/70 rounded-2xl p-3.5 text-amber-100">
+            <div class="flex items-center gap-1.5 font-black text-amber-300 text-xs sm:text-sm mb-1">
+              <span>💡 아쉬워요! 풀이 힌트를 보고 한 번 더 도전해 보세요! (남은 기회 1회)</span>
+            </div>
+            <div id="quizHintText" class="text-xs sm:text-sm leading-relaxed text-amber-100"></div>
+          </div>
+
+          <!-- Result Feedback Banner (Shown briefly upon correct/final wrong) -->
+          <div id="quizFeedbackBox" class="hidden rounded-2xl p-4 border-2 text-center">
+            <div id="quizFeedbackTitle" class="text-base sm:text-lg font-black mb-1"></div>
+            <div id="quizFeedbackDesc" class="text-xs sm:text-sm mb-3"></div>
+            <button id="btnQuizContinue" type="button" class="px-6 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-sm shadow-lg transition">
+              ⚡ 전투로 복귀하기
+            </button>
+          </div>
+
+          <!-- 4-Choice Multiple Choice Area -->
+          <div id="quizChoicesContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <!-- 4 choice buttons populated dynamically -->
+          </div>
+
+          <!-- Number Pad Input Area (Hidden by default unless toggled) -->
+          <div id="quizKeypadContainer" class="hidden bg-slate-950/90 border border-slate-800 rounded-2xl p-3.5">
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3 mb-3">
+              <div class="text-xs text-slate-300 font-semibold">
+                <span id="keypadFormatInstruction">정답 숫자를 입력하고 [정답 제출]을 누르세요.</span>
+              </div>
+              <!-- Dynamic Answer Input Display (supports Whole Number, Proper Fraction, or Mixed Number!) -->
+              <div id="keypadInputsWrapper" class="flex items-center gap-2">
+                <!-- Whole number box -->
+                <div id="kpBoxWholeWrap" class="flex flex-col items-center">
+                  <span id="kpLabelWhole" class="text-[10px] text-slate-400 mb-0.5">자연수</span>
+                  <button type="button" data-kpfield="whole" class="kp-field-btn min-w-[72px] h-11 px-3 rounded-xl border-2 border-cyan-400 bg-slate-900 text-white font-mono text-lg font-black flex items-center justify-center">
+                    <span id="kpValWhole">?</span>
+                  </button>
+                </div>
+                <!-- Fraction box (Numerator / Denominator) -->
+                <div id="kpBoxFracWrap" class="hidden flex-col items-center">
+                  <button type="button" data-kpfield="num" class="kp-field-btn min-w-[64px] h-9 px-2 rounded-t-xl border-2 border-slate-700 bg-slate-900 text-cyan-300 font-mono text-base font-black flex items-center justify-center">
+                    <span id="kpValNum">분자</span>
+                  </button>
+                  <div class="w-full h-0.5 bg-slate-400 my-0.5"></div>
+                  <button type="button" data-kpfield="den" class="kp-field-btn min-w-[64px] h-9 px-2 rounded-b-xl border-2 border-slate-700 bg-slate-900 text-amber-300 font-mono text-base font-black flex items-center justify-center">
+                    <span id="kpValDen">분모</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Number Pad Buttons -->
+            <div class="grid grid-cols-6 sm:grid-cols-6 gap-1.5">
+              <button type="button" data-kpkey="1" class="kp-digit py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-base">1</button>
+              <button type="button" data-kpkey="2" class="kp-digit py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-base">2</button>
+              <button type="button" data-kpkey="3" class="kp-digit py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-base">3</button>
+              <button type="button" data-kpkey="4" class="kp-digit py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-base">4</button>
+              <button type="button" data-kpkey="5" class="kp-digit py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-base">5</button>
+              <button type="button" data-kpkey="back" class="kp-digit py-2.5 rounded-xl bg-rose-900/70 hover:bg-rose-800 text-rose-200 font-bold text-sm">⌫</button>
+              <button type="button" data-kpkey="6" class="kp-digit py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-base">6</button>
+              <button type="button" data-kpkey="7" class="kp-digit py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-base">7</button>
+              <button type="button" data-kpkey="8" class="kp-digit py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-base">8</button>
+              <button type="button" data-kpkey="9" class="kp-digit py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-base">9</button>
+              <button type="button" data-kpkey="0" class="kp-digit py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-base">0</button>
+              <button type="button" data-kpkey="clear" class="kp-digit py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold text-xs">초기화</button>
+            </div>
+            <button id="btnSubmitKeypad" type="button" class="mt-2.5 w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black text-sm shadow-lg transition">
+              ✅ 정답 제출하기 (Enter)
+            </button>
+          </div>
+        </div>
+
+        <!-- Right Column (5 cols): Scratchpad (간이 연습장 캔버스) -->
+        <div class="lg:col-span-5 flex flex-col bg-slate-950/90 border border-slate-800 rounded-2xl p-3">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-1.5">
+              <span class="text-sm">✏️</span>
+              <span class="text-xs font-extrabold text-cyan-300">미니 연습장 (Scratchpad)</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button type="button" data-pen="#38bdf8" class="scratch-color w-5 h-5 rounded-full bg-sky-400 border-2 border-white"></button>
+              <button type="button" data-pen="#facc15" class="scratch-color w-5 h-5 rounded-full bg-yellow-400 border border-slate-600"></button>
+              <button type="button" data-pen="#f43f5e" class="scratch-color w-5 h-5 rounded-full bg-rose-500 border border-slate-600"></button>
+              <button id="btnClearScratchpad" type="button" class="ml-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 border border-slate-700">
+                전체 지우기
+              </button>
+            </div>
+          </div>
+          <div class="relative flex-1 min-h-[190px] sm:min-h-[230px] bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+            <canvas id="scratchpadCanvas" class="w-full h-full cursor-crosshair touch-none"></canvas>
+            <div class="pointer-events-none absolute bottom-2 right-2 text-[10px] text-slate-500">
+              마우스나 손가락으로 자유롭게 계산해 보세요
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 4. EVOLUTION COMBINATION TABLE MODAL ==================== -->
+  <div id="comboModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-md overflow-y-auto">
+    <div class="w-full max-w-4xl bg-slate-900 border-2 border-amber-500/60 rounded-3xl p-5 sm:p-6 neon-gold my-auto max-h-[92vh] overflow-y-auto custom-scroll">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+        <div>
+          <h3 class="text-2xl sm:text-3xl font-black text-amber-300 flex items-center gap-2">
+            <span>⚔️ 6쌍 무기 진화 조합표</span>
+          </h3>
+        </div>
+        <button id="btnCloseComboModal" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-600">
+          닫기 ✕
+        </button>
+      </div>
+      <div id="comboTableGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 5. MATH BATTLE REPORT & WRONG ANSWER NOTE MODAL ==================== -->
+  <div id="reportModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-md overflow-y-auto">
+    <div class="w-full max-w-4xl bg-slate-900 border-2 border-emerald-500/60 rounded-3xl p-5 sm:p-6 my-auto max-h-[94vh] overflow-y-auto custom-scroll shadow-2xl">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-4 mb-4">
+        <div>
+          <div id="reportStateBadge" class="inline-block px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold mb-1">
+            📊 수학 전투 리포트 & 오답 노트
+          </div>
+          <h3 id="reportTitle" class="text-2xl sm:text-3xl font-black text-white">전투 및 학습 분석 결과</h3>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btnRestartFromReport" class="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black text-xs sm:text-sm shadow">
+            🔄 새 게임 / 단원 변경
+          </button>
+          <button id="btnCloseReportModal" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm border border-slate-600">
+            계속하기 ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- Summary KPI Cards -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-5">
+        <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 text-center">
+          <div class="text-xs text-slate-400">도달 레벨 / 생존 시간</div>
+          <div id="repSurvival" class="text-lg sm:text-xl font-black text-cyan-300 mt-1">Lv.1 (00:00)</div>
+        </div>
+        <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 text-center">
+          <div class="text-xs text-slate-400">처치한 몬스터</div>
+          <div id="repKills" class="text-lg sm:text-xl font-black text-rose-400 mt-1">0마리</div>
+        </div>
+        <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 text-center">
+          <div class="text-xs text-slate-400">해결한 수학 퀴즈</div>
+          <div id="repTotalQuiz" class="text-lg sm:text-xl font-black text-amber-300 mt-1">0문제</div>
+        </div>
+        <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 text-center">
+          <div class="text-xs text-slate-400">전체 정답률</div>
+          <div id="repAccuracy" class="text-lg sm:text-xl font-black text-emerald-400 mt-1">100%</div>
+        </div>
+      </div>
+
+      <!-- Unit-by-Unit Accuracy Breakdown -->
+      <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 mb-5">
+        <h4 class="text-sm font-extrabold text-cyan-300 mb-3">📈 초등 5학년 1학기 단원별 정답률 그래프</h4>
+        <div id="repUnitBars" class="space-y-2.5"></div>
+      </div>
+
+      <!-- Wrong Answer Note List -->
+      <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h4 class="text-sm font-extrabold text-amber-300">📓 오답 노트 (틀렸거나 힌트를 본 문제 다시 보기)</h4>
+          <button id="btnClearWrongHistory" class="text-xs text-slate-400 hover:text-rose-400 transition">기록 초기화</button>
+        </div>
+        <div id="repWrongList" class="space-y-2.5 max-h-64 overflow-y-auto custom-scroll pr-1"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 6. PAUSE MODAL ==================== -->
+  <div id="pauseModal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+    <div class="w-full max-w-md bg-slate-900 border-2 border-cyan-500/50 rounded-3xl p-6 text-center neon-border">
+      <h3 class="text-3xl font-black text-white mb-6">⏸️ 일시정지</h3>
+      <div class="space-y-2.5">
+        <button id="btnResumeGame" class="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black text-sm shadow-lg">
+          ▶️ 전투 계속하기
+        </button>
+        <button id="btnPauseOpenCombo" class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-sm border border-amber-500/40">
+          📖 무기 진화 조합표 확인
+        </button>
+        <button id="btnPauseOpenReport" class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 font-bold text-sm border border-emerald-500/40">
+          📊 현재까지 수학 전투 리포트 / 오답 노트
+        </button>
+        <button id="btnPauseToLobby" class="w-full py-2.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 text-rose-200 font-bold text-sm border border-rose-500/40">
+          🏠 로비로 돌아가기 (단원 다시 선택)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== GAME LOGIC SCRIPT ==================== -->
+  <script>
+    // =========================================================================
+    // 1. GRADE 5 SEMESTER 1 CURRICULUM & 6 ACTIVE-PASSIVE PAIRS DATA
+    // =========================================================================
+    const MATH_UNITS = [
+      { id: 0, name: '전체 단원 랜덤', shortName: '전체 단원', icon: '🎲', desc: '초5-1 수학 1~6단원 모든 유형이 골고루 출제됩니다.' },
+      { id: 1, name: '1단원: 자연수의 혼합 계산', shortName: '1. 혼합 계산', icon: '➕', desc: '덧셈·뺄셈·곱셈·나눗셈과 괄호가 섞인 식의 계산 순서' },
+      { id: 2, name: '2단원: 약수와 배수', shortName: '2. 약수와 배수', icon: '🔢', desc: '약수, 배수, 최대공약수(GCD)와 최소공배수(LCM)' },
+      { id: 3, name: '3단원: 규칙과 대응', shortName: '3. 규칙과 대응', icon: '⚡', desc: '두 양 사이의 대응 관계식(□와 △)과 수열의 규칙' },
+      { id: 4, name: '4단원: 약분과 통분', shortName: '4. 약분과 통분', icon: '🛡️', desc: '크기가 같은 분수, 기약분수 약분, 분모 통분과 크기 비교' },
+      { id: 5, name: '5단원: 분수의 덧셈과 뺄셈', shortName: '5. 분수 덧뺄셈', icon: '🔥', desc: '분모가 다른 진분수·대분수의 덧셈과 뺄셈' },
+      { id: 6, name: '6단원: 다각형의 둘레와 넓이', shortName: '6. 다각형 넓이', icon: '📐', desc: '직사각형, 평행사변형, 삼각형, 마름모, 사다리꼴의 넓이' }
+    ];
+
+    const ACTIVE_WEAPONS = {
+      magic_bullet: {
+        id: 'magic_bullet',
+        pairId: 'stopwatch',
+        unitId: 1,
+        name: '사칙연산 마법탄',
+        icon: '🔮',
+        color: '#38bdf8',
+        desc: '가장 가까운 적에게 사칙연산 마법 탄환을 연속 발사합니다.',
+        evolvedName: '혼합계산 기관포',
+        evolvedIcon: '🚀',
+        evolvedColor: '#06b6d4',
+        evolvedDesc: '초고속 3갈래 관통 플라즈마 기관포를 쉼 없이 난사합니다!'
+      },
+      divisor_boomerang: {
+        id: 'divisor_boomerang',
+        pairId: 'gcd_magnet',
+        unitId: 2,
+        name: '약수의 부메랑',
+        icon: '🪃',
+        color: '#a855f7',
+        desc: '적을 관통하며 회전하고 돌아오는 부메랑을 날립니다.',
+        evolvedName: '공배수의 거대 차크람',
+        evolvedIcon: '⚙️',
+        evolvedColor: '#d946ef',
+        evolvedDesc: '화면 전체를 강타하는 거대 회전 톱날 차크람을 사방으로 방출합니다!'
+      },
+      rule_lightning: {
+        id: 'rule_lightning',
+        pairId: 'correspondence_ring',
+        unitId: 3,
+        name: '규칙의 번개',
+        icon: '⚡',
+        color: '#facc15',
+        desc: '무작위 적들에게 하늘에서 고전압 낙뢰를 내리꽂습니다.',
+        evolvedName: '함수 뇌우',
+        evolvedIcon: '🌩️',
+        evolvedColor: '#fde047',
+        evolvedDesc: '적들 사이를 연쇄적으로 튕기며 초광역 감전 폭풍을 일으킵니다!'
+      },
+      common_shield: {
+        id: 'common_shield',
+        pairId: 'irreducible_armor',
+        unitId: 4,
+        name: '통분의 보호막',
+        icon: '🛡️',
+        color: '#34d399',
+        desc: '캐릭터 주변을 회전하며 닿는 적을 밀쳐내고 피해를 주는 구체입니다.',
+        evolvedName: '절대분수 결계',
+        evolvedIcon: '💠',
+        evolvedColor: '#10b981',
+        evolvedDesc: '적의 접근을 차단하는 절대 결계와 주기적인 파동 폭발을 일으킵니다!'
+      },
+      fraction_molotov: {
+        id: 'fraction_molotov',
+        pairId: 'amp_flask',
+        unitId: 5,
+        name: '분수 화염병',
+        icon: '🧪',
+        color: '#fb7185',
+        desc: '주변 바닥에 화염 장판을 생성하여 지속적인 도트 피해를 입힙니다.',
+        evolvedName: '통분 메테오',
+        evolvedIcon: '☄️',
+        evolvedColor: '#f43f5e',
+        evolvedDesc: '하늘에서 거대 화염 운석을 연속 낙하시켜 광역 용암 지대를 만듭니다!'
+      },
+      polygon_laser: {
+        id: 'polygon_laser',
+        pairId: 'area_tome',
+        unitId: 6,
+        name: '다각형 레이저',
+        icon: '🔦',
+        color: '#f97316',
+        desc: '직선상의 모든 적을 단숨에 관통하는 고출력 레이저 빔을 발사합니다.',
+        evolvedName: '정다각형 프리즘',
+        evolvedIcon: '🌈',
+        evolvedColor: '#fb923c',
+        evolvedDesc: '8방향으로 회전하는 무지개 프리즘 레이저로 화면의 적을 쓸어버립니다!'
+      }
+    };
+
+    const PASSIVE_ITEMS = {
+      stopwatch: {
+        id: 'stopwatch',
+        pairId: 'magic_bullet',
+        unitId: 1,
+        name: '신속의 초시계',
+        icon: '⏱️',
+        color: '#38bdf8',
+        desc: '모든 무기의 공격 쿨타임이 레벨당 7% 감소합니다.'
+      },
+      gcd_magnet: {
+        id: 'gcd_magnet',
+        pairId: 'divisor_boomerang',
+        unitId: 2,
+        name: '최대공약수 자석',
+        icon: '🧲',
+        color: '#a855f7',
+        desc: '보석 자석 범위가 레벨당 +25%, 투사체 크기가 +10% 증가합니다.'
+      },
+      correspondence_ring: {
+        id: 'correspondence_ring',
+        pairId: 'rule_lightning',
+        unitId: 3,
+        name: '대응의 반지',
+        icon: '💍',
+        color: '#facc15',
+        desc: '모든 무기의 발사 투사체 수가 증가합니다 (짝수 레벨마다 +1 추가).'
+      },
+      irreducible_armor: {
+        id: 'irreducible_armor',
+        pairId: 'common_shield',
+        unitId: 4,
+        name: '기약분수 갑옷',
+        icon: '🥋',
+        color: '#34d399',
+        desc: '전체 공격력이 레벨당 +12% 증가하고 받는 피해가 감소합니다.'
+      },
+      amp_flask: {
+        id: 'amp_flask',
+        pairId: 'fraction_molotov',
+        unitId: 5,
+        name: '증폭의 플라스크',
+        icon: '⚗️',
+        color: '#fb7185',
+        desc: '장판 지속시간 및 공격 범위가 레벨당 +15% 증가합니다.'
+      },
+      area_tome: {
+        id: 'area_tome',
+        pairId: 'polygon_laser',
+        unitId: 6,
+        name: '넓이 공식 서적',
+        icon: '📘',
+        color: '#f97316',
+        desc: '치명타 확률이 레벨당 +5%, 치명타 피해량이 +15% 증가합니다.'
+      }
+    };
+
+    // =========================================================================
+    // 2. WEB AUDIO SYNTHESIZER (NO EXTERNAL ASSETS REQUIRED)
+    // =========================================================================
+    class SoundEngine {
+      constructor() {
+        this.ctx = null;
+        this.muted = false;
+      }
+      init() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) this.ctx = new AudioCtx();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+      playTone(freq, type = 'sine', duration = 0.12, vol = 0.12, slideFreq = null) {
+        if (this.muted) return;
+        try {
+          this.init();
+          if (!this.ctx) return;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+          if (slideFreq) {
+            osc.frequency.exponentialRampToValueAtTime(slideFreq, this.ctx.currentTime + duration);
+          }
+          gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + duration);
+        } catch (e) {}
+      }
+      shoot() { this.playTone(520, 'triangle', 0.07, 0.05, 260); }
+      hit() { this.playTone(180, 'sawtooth', 0.05, 0.04, 90); }
+      gem() { this.playTone(880, 'sine', 0.06, 0.05, 1320); }
+      levelUp() {
+        [440, 554, 659, 880].forEach((f, i) => {
+          setTimeout(() => this.playTone(f, 'triangle', 0.14, 0.1), i * 65);
+        });
+      }
+      correct() {
+        [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+          setTimeout(() => this.playTone(f, 'sine', 0.18, 0.13), i * 70);
+        });
+      }
+      wrong() {
+        this.playTone(220, 'sawtooth', 0.22, 0.1, 130);
+      }
+      shockwave() {
+        this.playTone(150, 'sine', 0.45, 0.16, 40);
+      }
+      bossAlert() {
+        [196, 185, 196, 146].forEach((f, i) => {
+          setTimeout(() => this.playTone(f, 'sawtooth', 0.22, 0.12), i * 160);
+        });
+      }
+    }
+    const sfx = new SoundEngine();
+
+    // =========================================================================
+    // 3. MATH HELPERS & PROCEDURAL GRADE 5-1 QUESTION GENERATOR
+    // =========================================================================
+    function gcd(a, b) {
+      a = Math.abs(a); b = Math.abs(b);
+      while (b) { let t = b; b = a % b; a = t; }
+      return a || 1;
+    }
+    function lcm(a, b) {
+      return Math.abs(a * b) / gcd(a, b);
+    }
+    function randInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+    function shuffleArray(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+    function formatFractionHTML(whole, num, den) {
+      if (!num || num === 0) return `<span>${whole}</span>`;
+      if (whole && whole > 0) {
+        return `<span class="math-mixed"><span>${whole}</span><span class="math-frac"><span class="num">${num}</span><span class="den">${den}</span></span></span>`;
+      }
+      return `<span class="math-frac"><span class="num">${num}</span><span class="den">${den}</span></span>`;
+    }
+
+    class MathQuestionGenerator {
+      static generate(unitId = 1, tier = 1) {
+        // unitId: 1..6 (if 0, pick random 1..6)
+        const targetUnit = (unitId >= 1 && unitId <= 6) ? unitId : randInt(1, 6);
+        // tier: 1 (Basic Lv1~4), 2 (Intermediate Lv5~7), 3 (Evolution Lv8 / Boss)
+        switch (targetUnit) {
+          case 1: return this.genUnit1(tier);
+          case 2: return this.genUnit2(tier);
+          case 3: return this.genUnit3(tier);
+          case 4: return this.genUnit4(tier);
+          case 5: return this.genUnit5(tier);
+          case 6: return this.genUnit6(tier);
+          default: return this.genUnit1(tier);
+        }
+      }
+
+      // Helper to build 4 distinct integer choices
+      static makeIntChoices(ans, offsets = [-4, -3, -2, -1, 1, 2, 3, 4, 6, -6]) {
+        const set = new Set([ans]);
+        const cands = shuffleArray(offsets);
+        for (const off of cands) {
+          const val = ans + off;
+          if (val > 0 && !set.has(val)) set.add(val);
+          if (set.size === 4) break;
+        }
+        while (set.size < 4) {
+          set.add(ans + set.size * 2 + 1);
+        }
+        return shuffleArray(Array.from(set)).map(v => ({
+          labelHTML: `${v}`,
+          valueKey: `${v}`
+        }));
+      }
+
+      // 1단원: 자연수의 혼합 계산
+      static genUnit1(tier) {
+        const unitName = '1단원: 자연수의 혼합 계산';
+        if (tier === 1) {
+          // Basic 3-term addition/subtraction or mult/div
+          if (Math.random() < 0.55) {
+            const a = randInt(18, 45);
+            const b = randInt(6, 15);
+            const c = randInt(5, 20);
+            const ans = a - b + c;
+            return {
+              unitId: 1, unitName, tier,
+              questionHTML: `다음 식을 순서대로 계산하면 얼마인가요?<div class="mt-2 text-2xl text-cyan-300 font-mono">${a} - ${b} + ${c} = ?</div>`,
+              answerType: 'int',
+              correctKey: `${ans}`,
+              correctDisplayHTML: `${ans}`,
+              choices: this.makeIntChoices(ans),
+              hintHTML: `덧셈과 뺄셈이 섞여 있는 식은 <b>앞에서부터 차례대로</b> 계산해요!<br>① ${a} - ${b} = ${a - b} ➔ ② ${a - b} + ${c} = 정답!`
+            };
+          } else {
+            const b = randInt(2, 6);
+            const q = randInt(3, 8);
+            const a = b * q;
+            const c = randInt(2, 5);
+            const ans = q * c;
+            return {
+              unitId: 1, unitName, tier,
+              questionHTML: `다음 곱셈과 나눗셈 혼합식을 계산하세요.<div class="mt-2 text-2xl text-cyan-300 font-mono">${a} ÷ ${b} × ${c} = ?</div>`,
+              answerType: 'int',
+              correctKey: `${ans}`,
+              correctDisplayHTML: `${ans}`,
+              choices: this.makeIntChoices(ans, [-c, c, -2, 2, 4, -4]),
+              hintHTML: `곱셈과 나눗셈이 섞여 있을 때는 <b>앞에서부터 차례대로</b> 계산해요!<br>① ${a} ÷ ${b} = ${q} ➔ ② ${q} × ${c} = 정답!`
+            };
+          }
+        } else if (tier === 2) {
+          // Intermediate: parentheses + division/multiplication
+          const d = randInt(2, 5);
+          const q = randInt(3, 7);
+          const subB = randInt(3, 9);
+          const subA = d * q + subB;
+          const first = randInt(12, 35);
+          const ans = first + q;
+          return {
+            unitId: 1, unitName, tier,
+            questionHTML: `괄호가 있는 혼합 계산식의 알맞은 답을 구하세요.<div class="mt-2 text-2xl text-cyan-300 font-mono">${first} + (${subA} - ${subB}) ÷ ${d} = ?</div>`,
+            answerType: 'int',
+            correctKey: `${ans}`,
+            correctDisplayHTML: `${ans}`,
+            choices: this.makeIntChoices(ans),
+            hintHTML: `계산 순서: <b>① 괄호 안 (${subA} - ${subB} = ${subA - subB})</b> ➔ <b>② 나눗셈 (${subA - subB} ÷ ${d} = ${q})</b> ➔ <b>③ 덧셈 (${first} + ${q})</b> 순서로 풀어요!`
+          };
+        } else {
+          // Tier 3 (Evolution): Find missing □ in mixed operation
+          const box = randInt(3, 9);
+          const add = randInt(2, 6);
+          const mult = randInt(2, 4);
+          const product = (box + add) * mult;
+          const total = product + randInt(8, 25);
+          const result = total - product;
+          return {
+            unitId: 1, unitName, tier,
+            questionHTML: `[진화 시험] 다음 식이 성립하도록 <span class="text-amber-300">□</span> 안에 들어갈 자연수를 구하세요.<div class="mt-2 text-2xl text-amber-300 font-mono">${total} - ( □ + ${add} ) × ${mult} = ${result}</div>`,
+            answerType: 'int',
+            correctKey: `${box}`,
+            correctDisplayHTML: `${box}`,
+            choices: this.makeIntChoices(box, [-3, -2, -1, 1, 2, 3, 4]),
+            hintHTML: `거꾸로 생각하기: (□ + ${add}) × ${mult} 의 값이 ${total} - ${result} = <b>${product}</b>이어야 해요!<br>따라서 (□ + ${add}) = ${product} ÷ ${mult} = <b>${box + add}</b> 입니다.`
+          };
+        }
+      }
+
+      // 2단원: 약수와 배수
+      static genUnit2(tier) {
+        const unitName = '2단원: 약수와 배수';
+        if (tier === 1) {
+          const targets = [12, 16, 18, 20, 24, 28, 30, 36];
+          const n = targets[randInt(0, targets.length - 1)];
+          let cnt = 0;
+          const divs = [];
+          for (let i = 1; i <= n; i++) {
+            if (n % i === 0) { cnt++; divs.push(i); }
+          }
+          return {
+            unitId: 2, unitName, tier,
+            questionHTML: `자연수 <span class="text-cyan-300 font-black">${n}</span>의 약수는 모두 몇 개인가요?`,
+            answerType: 'int',
+            correctKey: `${cnt}`,
+            correctDisplayHTML: `${cnt}개`,
+            choices: this.makeIntChoices(cnt, [-2, -1, 1, 2, 3]),
+            hintHTML: `${n}을 나누어떨어지게 하는 수를 짝지어 찾아보세요!<br>${n}의 약수: ${divs.slice(0, -1).join(', ')}, 그리고 마지막 자기 자신(${n})까지 세어보세요.`
+          };
+        } else if (tier === 2) {
+          // GCD of two numbers
+          const g = randInt(4, 12);
+          const pairs = [[2, 3], [3, 4], [2, 5], [3, 5], [4, 5]];
+          const [m1, m2] = pairs[randInt(0, pairs.length - 1)];
+          const a = g * m1;
+          const b = g * m2;
+          return {
+            unitId: 2, unitName, tier,
+            questionHTML: `두 자연수 <span class="text-cyan-300 font-black">${a}</span>와(과) <span class="text-cyan-300 font-black">${b}</span>의 <b>최대공약수</b>는 얼마인가요?`,
+            answerType: 'int',
+            correctKey: `${g}`,
+            correctDisplayHTML: `${g}`,
+            choices: this.makeIntChoices(g, [-4, -2, -1, 2, 4, 6]),
+            hintHTML: `두 수를 동시에 나누어떨어지게 하는 가장 큰 공약수를 찾아요!<br>${a} = ${g} × ${m1}, ${b} = ${g} × ${m2} 이므로 공통된 가장 큰 약수를 구해보세요.`
+          };
+        } else {
+          // Tier 3: LCM word / direct problem
+          const g = randInt(2, 5);
+          const pairs = [[2, 3], [3, 4], [2, 5], [3, 5]];
+          const [m1, m2] = pairs[randInt(0, pairs.length - 1)];
+          const a = g * m1;
+          const b = g * m2;
+          const ans = lcm(a, b);
+          return {
+            unitId: 2, unitName, tier,
+            questionHTML: `[진화 시험] A 포탑은 <span class="text-amber-300">${a}초</span>마다, B 포탑은 <span class="text-amber-300">${b}초</span>마다 레이저를 발사합니다. 두 포탑이 동시에 발사된 후, 처음으로 다시 동시에 발사되는 것은 몇 초 후인가요? (최소공배수)`,
+            answerType: 'int',
+            correctKey: `${ans}`,
+            correctDisplayHTML: `${ans}초`,
+            choices: this.makeIntChoices(ans, [-a, -b, a, b, 6, -6]),
+            hintHTML: `${a}와 ${b}의 <b>최소공배수</b>를 구하는 문제예요!<br>최대공약수가 ${g}이므로, ${g} × ${m1} × ${m2} 를 계산하면 최소공배수가 됩니다.`
+          };
+        }
+      }
+
+      // 3단원: 규칙과 대응
+      static genUnit3(tier) {
+        const unitName = '3단원: 규칙과 대응';
+        if (tier === 1) {
+          const step = randInt(3, 8);
+          const start = randInt(2, 10);
+          const seq = [start, start + step, start + step * 2, start + step * 3];
+          const ans = start + step * 4;
+          return {
+            unitId: 3, unitName, tier,
+            questionHTML: `규칙에 따라 수를 늘어놓았습니다. 빈칸에 알맞은 수는 무엇인가요?<div class="mt-2 text-2xl text-cyan-300 font-mono">${seq.join(' ➔ ')} ➔ [ ? ]</div>`,
+            answerType: 'int',
+            correctKey: `${ans}`,
+            correctDisplayHTML: `${ans}`,
+            choices: this.makeIntChoices(ans, [-step, -2, -1, 1, 2, step]),
+            hintHTML: `앞의 수에 일정한 수를 더하는 규칙이에요! (${seq[1]} - ${seq[0]} = <b>+${step}</b>씩 커집니다.)`
+          };
+        } else if (tier === 2) {
+          const k = randInt(3, 7);
+          const targetX = randInt(6, 11);
+          const ans = targetX * k;
+          const tableHTML = `
+            <table class="w-full max-w-md text-center text-xs sm:text-sm border-collapse border border-slate-700">
+              <tr class="bg-slate-800 text-cyan-300 font-bold">
+                <td class="border border-slate-700 p-1.5">□ (입력)</td>
+                <td class="border border-slate-700 p-1.5">1</td>
+                <td class="border border-slate-700 p-1.5">2</td>
+                <td class="border border-slate-700 p-1.5">3</td>
+                <td class="border border-slate-700 p-1.5">...</td>
+                <td class="border border-slate-700 p-1.5 text-amber-300">${targetX}</td>
+              </tr>
+              <tr class="bg-slate-900 text-white font-mono">
+                <td class="border border-slate-700 p-1.5 font-sans font-bold text-purple-300">△ (출력)</td>
+                <td class="border border-slate-700 p-1.5">${k}</td>
+                <td class="border border-slate-700 p-1.5">${k * 2}</td>
+                <td class="border border-slate-700 p-1.5">${k * 3}</td>
+                <td class="border border-slate-700 p-1.5">...</td>
+                <td class="border border-slate-700 p-1.5 text-amber-300 font-black">?</td>
+              </tr>
+            </table>
+          `;
+          return {
+            unitId: 3, unitName, tier,
+            questionHTML: `아래 표에서 □와 △ 사이의 대응 규칙을 찾아, □가 <span class="text-amber-300">${targetX}</span>일 때 △의 값을 구하세요.`,
+            diagramHTML: tableHTML,
+            answerType: 'int',
+            correctKey: `${ans}`,
+            correctDisplayHTML: `${ans}`,
+            choices: this.makeIntChoices(ans, [-k, k, -3, 3, -5, 5]),
+            hintHTML: `대응 관계식은 <b>△ = □ × ${k}</b> 입니다! □ 자리에 ${targetX}을 넣어 계산해 보세요.`
+          };
+        } else {
+          // Tier 3: Two-operation table/chair rule (y = 2x + 2 or 3x + 1)
+          const perTable = randInt(2, 4);
+          const extra = 2;
+          const n = randInt(6, 10);
+          const ans = perTable * n + extra;
+          return {
+            unitId: 3, unitName, tier,
+            questionHTML: `[진화 시험] 사각 탁자 1개에는 의자를 ${perTable + extra}개 놓을 수 있고, 탁자를 이어 붙일 때마다 의자가 <b>${perTable}개씩</b> 더 늘어납니다. 탁자 <span class="text-amber-300">${n}개</span>를 일렬로 이어 붙였을 때 놓을 수 있는 의자는 모두 몇 개인가요?`,
+            answerType: 'int',
+            correctKey: `${ans}`,
+            correctDisplayHTML: `${ans}개`,
+            choices: this.makeIntChoices(ans, [-perTable, perTable, -2, 2, 4, -4]),
+            hintHTML: `(의자 수) = (탁자 수) × ${perTable} + ${extra} 의 규칙을 가집니다!<br>탁자가 ${n}개이므로 <b>${n} × ${perTable} + ${extra}</b>을 계산해 보세요.`
+          };
+        }
+      }
+
+      // 4단원: 약분과 통분
+      static genUnit4(tier) {
+        const unitName = '4단원: 약분과 통분';
+        if (tier === 1) {
+          // Equivalent fraction blank
+          const basePairs = [[2, 3], [3, 4], [2, 5], [3, 5], [4, 7]];
+          const [n, d] = basePairs[randInt(0, basePairs.length - 1)];
+          const mult = randInt(2, 5);
+          const ans = n * mult;
+          const targetDen = d * mult;
+          return {
+            unitId: 4, unitName, tier,
+            questionHTML: `크기가 같은 분수가 되도록 □ 안에 알맞은 수를 구하세요.<div class="mt-2 text-xl flex items-center justify-center gap-3">${formatFractionHTML(0, n, d)} <span>=</span> ${formatFractionHTML(0, '□', targetDen)}</div>`,
+            answerType: 'int',
+            correctKey: `${ans}`,
+            correctDisplayHTML: `${ans}`,
+            choices: this.makeIntChoices(ans, [-3, -2, -1, 1, 2, 3]),
+            hintHTML: `분모에 0이 아닌 같은 수를 곱하면 크기가 같은 분수가 됩니다!<br>분모가 ${d}에서 ${targetDen}로 <b>${mult}배</b>가 되었으니, 분자 ${n}에도 <b>${mult}</b>을 곱해요.`
+          };
+        } else if (tier === 2) {
+          // Irreducible fraction (기약분수)
+          const basePairs = [[2, 3], [3, 4], [2, 5], [3, 5], [4, 5], [3, 7]];
+          const [irNum, irDen] = basePairs[randInt(0, basePairs.length - 1)];
+          const g = randInt(3, 6);
+          const origNum = irNum * g;
+          const origDen = irDen * g;
+          // Ask either for irreducible fraction itself (using fraction keypad/choices!) or sum of num+den
+          if (Math.random() < 0.55) {
+            // Fraction answer directly!
+            const correctKey = `0:${irNum}/${irDen}`;
+            const distractorPairs = [
+              [irNum + 1, irDen],
+              [irNum, irDen + 1],
+              [irNum * 2, irDen * 2],
+              [Math.max(1, irNum - 1), irDen + 2]
+            ];
+            const choiceSet = new Map();
+            choiceSet.set(correctKey, { labelHTML: formatFractionHTML(0, irNum, irDen), valueKey: correctKey });
+            for (const [dn, dd] of distractorPairs) {
+              const k = `0:${dn}/${dd}`;
+              if (!choiceSet.has(k)) {
+                choiceSet.set(k, { labelHTML: formatFractionHTML(0, dn, dd), valueKey: k });
+              }
+              if (choiceSet.size === 4) break;
+            }
+            return {
+              unitId: 4, unitName, tier,
+              questionHTML: `분수 ${formatFractionHTML(0, origNum, origDen)}을(를) <b>기약분수</b>로 약분하면 얼마인가요?`,
+              answerType: 'frac',
+              correctKey,
+              correctDisplayHTML: formatFractionHTML(0, irNum, irDen),
+              choices: shuffleArray(Array.from(choiceSet.values())),
+              hintHTML: `분모와 분자의 최대공약수인 <b>${g}</b>(으)로 분모와 분자를 각각 나누어 보세요!<br>${origNum} ÷ ${g} = ${irNum}, ${origDen} ÷ ${g} = ${irDen}`
+            };
+          } else {
+            const ans = irNum + irDen;
+            return {
+              unitId: 4, unitName, tier,
+              questionHTML: `분수 ${formatFractionHTML(0, origNum, origDen)}을(를) <b>기약분수</b>로 나타냈을 때, <b>분모와 분자의 합</b>은 얼마인가요?`,
+              answerType: 'int',
+              correctKey: `${ans}`,
+              correctDisplayHTML: `${ans} (기약분수: ${irNum}/${irDen})`,
+              choices: this.makeIntChoices(ans, [-2, -1, 1, 2, 3, 4]),
+              hintHTML: `분모와 분자의 최대공약수인 <b>${g}</b>로 나누면 기약분수 ${formatFractionHTML(0, irNum, irDen)}가 됩니다.<br>따라서 분모(${irDen}) + 분자(${irNum})를 계산하세요!`
+            };
+          }
+        } else {
+          // Tier 3: Common denominator & fraction comparison
+          // Find integer □ such that 1/3 < □/12 < 1/2 or similar clean inequality
+          const cases = [
+            { leftN: 1, leftD: 3, rightN: 1, rightD: 2, commonD: 12, ans: 5, leftScaled: 4, rightScaled: 6 },
+            { leftN: 2, leftD: 5, rightN: 3, rightD: 5, commonD: 10, ans: 5, leftScaled: 4, rightScaled: 6 },
+            { leftN: 1, leftD: 2, rightN: 2, rightD: 3, commonD: 12, ans: 7, leftScaled: 6, rightScaled: 8 },
+            { leftN: 2, leftD: 3, rightN: 5, rightD: 6, commonD: 12, ans: 9, leftScaled: 8, rightScaled: 10 },
+            { leftN: 1, leftD: 4, rightN: 1, rightD: 2, commonD: 8, ans: 3, leftScaled: 2, rightScaled: 4 }
+          ];
+          const c = cases[randInt(0, cases.length - 1)];
+          return {
+            unitId: 4, unitName, tier,
+            questionHTML: `[진화 시험] 세 분수의 크기를 비교하여 □ 안에 들어갈 알맞은 자연수를 구하세요.<div class="mt-2 text-xl flex items-center justify-center gap-3">${formatFractionHTML(0, c.leftN, c.leftD)} <span>&lt;</span> ${formatFractionHTML(0, '□', c.commonD)} <span>&lt;</span> ${formatFractionHTML(0, c.rightN, c.rightD)}</div>`,
+            answerType: 'int',
+            correctKey: `${c.ans}`,
+            correctDisplayHTML: `${c.ans}`,
+            choices: this.makeIntChoices(c.ans, [-2, -1, 1, 2, 3]),
+            hintHTML: `세 분모의 공통분모인 <b>${c.commonD}</b>(으)로 통분해 보세요!<br>${formatFractionHTML(0, c.leftN, c.leftD)} = ${formatFractionHTML(0, c.leftScaled, c.commonD)} 이고, ${formatFractionHTML(0, c.rightN, c.rightD)} = ${formatFractionHTML(0, c.rightScaled, c.commonD)} 이므로 ${c.leftScaled}보다 크고 ${c.rightScaled}보다 작은 자연수를 찾으면 됩니다!`
+          };
+        }
+      }
+
+      // 5단원: 분수의 덧셈과 뺄셈
+      static genUnit5(tier) {
+        const unitName = '5단원: 분수의 덧셈과 뺄셈';
+        const buildFracChoices = (w, n, d) => {
+          const correctKey = `${w}:${n}/${d}`;
+          const choiceMap = new Map();
+          choiceMap.set(correctKey, { labelHTML: formatFractionHTML(w, n, d), valueKey: correctKey });
+          const candidates = [
+            [w, n + 1, d],
+            [w, Math.max(1, n - 1), d],
+            [w, n, d + 1],
+            [w + 1, n, d],
+            [Math.max(0, w - 1), n + 1, d]
+          ];
+          for (const [cw, cn, cd] of candidates) {
+            if (cn >= cd && cw > 0) continue;
+            const k = `${cw}:${cn}/${cd}`;
+            if (!choiceMap.has(k)) {
+              choiceMap.set(k, { labelHTML: formatFractionHTML(cw, cn, cd), valueKey: k });
+            }
+            if (choiceMap.size === 4) break;
+          }
+          let extra = 2;
+          while (choiceMap.size < 4) {
+            const k = `${w}:${n + extra}/${d + extra}`;
+            choiceMap.set(k, { labelHTML: formatFractionHTML(w, n + extra, d + extra), valueKey: k });
+            extra++;
+          }
+          return shuffleArray(Array.from(choiceMap.values()));
+        };
+
+        if (tier === 1) {
+          // Unit fractions addition/subtraction (1/a ± 1/b)
+          const pairs = [[2, 3], [2, 5], [3, 4], [3, 5], [4, 5]];
+          const [a, b] = pairs[randInt(0, pairs.length - 1)];
+          const isAdd = Math.random() < 0.65;
+          const den = a * b;
+          const num = isAdd ? (b + a) : (b - a);
+          const op = isAdd ? '+' : '-';
+          const correctKey = `0:${num}/${den}`;
+          return {
+            unitId: 5, unitName, tier,
+            questionHTML: `다음 단위분수의 ${isAdd ? '덧셈' : '뺄셈'} 결과를 구하세요.<div class="mt-2 text-2xl flex items-center justify-center gap-3">${formatFractionHTML(0, 1, a)} <span>${op}</span> ${formatFractionHTML(0, 1, b)} <span>=</span> <span>?</span></div>`,
+            answerType: 'frac',
+            correctKey,
+            correctDisplayHTML: formatFractionHTML(0, num, den),
+            choices: buildFracChoices(0, num, den),
+            hintHTML: `분모 ${a}와 ${b}의 최소공배수인 <b>${den}</b>(으)로 통분하여 계산해요!<br>${formatFractionHTML(0, b, den)} ${op} ${formatFractionHTML(0, a, den)} = ${formatFractionHTML(0, num, den)}`
+          };
+        } else if (tier === 2) {
+          // Proper fractions with different denominators
+          const problems = [
+            { n1: 1, d1: 2, n2: 1, d2: 6, op: '+', ansN: 2, ansD: 3, lcd: 6, s1: 3, s2: 1 },
+            { n1: 2, d1: 3, n2: 1, d2: 6, op: '+', ansN: 5, ansD: 6, lcd: 6, s1: 4, s2: 1 },
+            { n1: 3, d1: 4, n2: 1, d2: 6, op: '-', ansN: 7, ansD: 12, lcd: 12, s1: 9, s2: 2 },
+            { n1: 2, d1: 5, n2: 3, d2: 10, op: '+', ansN: 7, ansD: 10, lcd: 10, s1: 4, s2: 3 },
+            { n1: 5, d1: 6, n2: 1, d2: 4, op: '-', ansN: 7, ansD: 12, lcd: 12, s1: 10, s2: 3 }
+          ];
+          const p = problems[randInt(0, problems.length - 1)];
+          const correctKey = `0:${p.ansN}/${p.ansD}`;
+          return {
+            unitId: 5, unitName, tier,
+            questionHTML: `다음 분수의 계산 결과를 기약분수로 구하세요.<div class="mt-2 text-2xl flex items-center justify-center gap-3">${formatFractionHTML(0, p.n1, p.d1)} <span>${p.op}</span> ${formatFractionHTML(0, p.n2, p.d2)} <span>=</span> <span>?</span></div>`,
+            answerType: 'frac',
+            correctKey,
+            correctDisplayHTML: formatFractionHTML(0, p.ansN, p.ansD),
+            choices: buildFracChoices(0, p.ansN, p.ansD),
+            hintHTML: `두 분모를 <b>${p.lcd}</b>(으)로 통분하면 ${formatFractionHTML(0, p.s1, p.lcd)} ${p.op} ${formatFractionHTML(0, p.s2, p.lcd)} 이 됩니다. 계산 후 약분해 보세요!`
+          };
+        } else {
+          // Tier 3: Mixed numbers with carrying/borrowing
+          const mixedProbs = [
+            { w1: 1, n1: 2, d1: 3, w2: 1, n2: 3, d2: 4, op: '+', ansW: 3, ansN: 5, ansD: 12, hint: '1과 8/12 + 1과 9/12 = 2와 17/12 = 3과 5/12' },
+            { w1: 2, n1: 1, d1: 2, w2: 1, n2: 2, d2: 3, op: '+', ansW: 4, ansN: 1, ansD: 6, hint: '2와 3/6 + 1과 4/6 = 3과 7/6 = 4와 1/6' },
+            { w1: 3, n1: 1, d1: 4, w2: 1, n2: 3, d2: 4, op: '-', ansW: 1, ansN: 1, ansD: 2, hint: '2와 5/4 - 1과 3/4 = 1과 2/4 = 1과 1/2' },
+            { w1: 3, n1: 1, d1: 3, w2: 1, n2: 5, d2: 6, op: '-', ansW: 1, ansN: 1, ansD: 2, hint: '3과 2/6 - 1과 5/6 = 2와 8/6 - 1과 5/6 = 1과 3/6 = 1과 1/2' }
+          ];
+          const p = mixedProbs[randInt(0, mixedProbs.length - 1)];
+          const correctKey = `${p.ansW}:${p.ansN}/${p.ansD}`;
+          return {
+            unitId: 5, unitName, tier,
+            questionHTML: `[진화 시험] 다음 대분수의 식을 계산하여 기약분수로 나타내세요.<div class="mt-2 text-2xl flex items-center justify-center gap-3">${formatFractionHTML(p.w1, p.n1, p.d1)} <span>${p.op}</span> ${formatFractionHTML(p.w2, p.n2, p.d2)} <span>=</span> <span>?</span></div>`,
+            answerType: 'mixed',
+            correctKey,
+            correctDisplayHTML: formatFractionHTML(p.ansW, p.ansN, p.ansD),
+            choices: buildFracChoices(p.ansW, p.ansN, p.ansD),
+            hintHTML: `분모를 통분한 뒤 받아올림/받아내림하여 계산해요!<br>풀이 과정: <b>${p.hint}</b>`
+          };
+        }
+      }
+
+      // 6단원: 다각형의 둘레와 넓이
+      static genUnit6(tier) {
+        const unitName = '6단원: 다각형의 둘레와 넓이';
+        if (tier === 1) {
+          if (Math.random() < 0.5) {
+            const w = randInt(5, 12);
+            const h = randInt(4, 10);
+            const ans = w * h;
+            return {
+              unitId: 6, unitName, tier,
+              questionHTML: `가로가 <span class="text-cyan-300">${w}cm</span>, 세로가 <span class="text-cyan-300">${h}cm</span>인 직사각형의 <b>넓이</b>는 몇 cm²인가요?`,
+              answerType: 'int',
+              correctKey: `${ans}`,
+              correctDisplayHTML: `${ans} cm²`,
+              choices: this.makeIntChoices(ans, [-w, w, (w + h) * 2 - ans, -4, 4]),
+              hintHTML: `직사각형의 넓이 공식은 <b>(가로) × (세로)</b> 입니다! (${w} × ${h})`
+            };
+          } else {
+            const side = randInt(5, 14);
+            const shapes = [
+              { name: '정오각형', sides: 5 },
+              { name: '정육각형', sides: 6 },
+              { name: '정팔각형', sides: 8 }
+            ];
+            const sh = shapes[randInt(0, shapes.length - 1)];
+            const ans = side * sh.sides;
+            return {
+              unitId: 6, unitName, tier,
+              questionHTML: `한 변의 길이가 <span class="text-cyan-300">${side}cm</span>인 <b>${sh.name}</b>의 둘레는 몇 cm인가요?`,
+              answerType: 'int',
+              correctKey: `${ans}`,
+              correctDisplayHTML: `${ans} cm`,
+              choices: this.makeIntChoices(ans, [-side, side, -4, 4, 6]),
+              hintHTML: `${sh.name}은 길이가 같은 변이 <b>${sh.sides}개</b> 있어요! 따라서 (한 변의 길이 ${side}) × ${sh.sides}을 계산합니다.`
+            };
+          }
+        } else if (tier === 2) {
+          // Triangle or Parallelogram area
+          if (Math.random() < 0.65) {
+            const base = randInt(3, 7) * 2;
+            const height = randInt(4, 11);
+            const ans = (base * height) / 2;
+            return {
+              unitId: 6, unitName, tier,
+              questionHTML: `밑변의 길이가 <span class="text-cyan-300">${base}cm</span>이고 높이가 <span class="text-cyan-300">${height}cm</span>인 <b>삼각형의 넓이</b>는 몇 cm²인가요?`,
+              answerType: 'int',
+              correctKey: `${ans}`,
+              correctDisplayHTML: `${ans} cm²`,
+              choices: this.makeIntChoices(ans, [ans, -base, base, -4, 4]),
+              hintHTML: `삼각형의 넓이 공식은 <b>(밑변) × (높이) ÷ 2</b> 예요! 마지막에 2로 나누는 것을 잊지 마세요.<br>(${base} × ${height} ÷ 2)`
+            };
+          } else {
+            const base = randInt(5, 12);
+            const height = randInt(4, 10);
+            const ans = base * height;
+            return {
+              unitId: 6, unitName, tier,
+              questionHTML: `밑변의 길이가 <span class="text-cyan-300">${base}cm</span>, 높이가 <span class="text-cyan-300">${height}cm</span>인 <b>평행사변형의 넓이</b>는 몇 cm²인가요?`,
+              answerType: 'int',
+              correctKey: `${ans}`,
+              correctDisplayHTML: `${ans} cm²`,
+              choices: this.makeIntChoices(ans, [-base, base, -height, height]),
+              hintHTML: `평행사변형의 넓이 공식은 <b>(밑변의 길이) × (높이)</b> 입니다! (${base} × ${height})`
+            };
+          }
+        } else {
+          // Tier 3 (Evolution / Boss Shield): Trapezoid or Rhombus area
+          if (Math.random() < 0.55) {
+            const top = randInt(3, 8);
+            const bottom = top + randInt(2, 6);
+            const height = randInt(2, 5) * 2;
+            const ans = ((top + bottom) * height) / 2;
+            return {
+              unitId: 6, unitName, tier,
+              questionHTML: `[진화·결계 시험] 윗변이 <span class="text-amber-300">${top}cm</span>, 아랫변이 <span class="text-amber-300">${bottom}cm</span>, 높이가 <span class="text-amber-300">${height}cm</span>인 <b>사다리꼴의 넓이</b>는 몇 cm²인가요?`,
+              answerType: 'int',
+              correctKey: `${ans}`,
+              correctDisplayHTML: `${ans} cm²`,
+              choices: this.makeIntChoices(ans, [-height, height, -6, 6, 10]),
+              hintHTML: `사다리꼴의 넓이 = <b>(윗변 + 아랫변) × 높이 ÷ 2</b><br>① (${top} + ${bottom}) = ${top + bottom} ➔ ② ${top + bottom} × ${height} ÷ 2 를 계산하세요!`
+            };
+          } else {
+            const d1 = randInt(3, 7) * 2;
+            const d2 = randInt(4, 9);
+            const ans = (d1 * d2) / 2;
+            return {
+              unitId: 6, unitName, tier,
+              questionHTML: `[진화·결계 시험] 한 대각선의 길이가 <span class="text-amber-300">${d1}cm</span>, 다른 대각선의 길이가 <span class="text-amber-300">${d2}cm</span>인 <b>마름모의 넓이</b>는 몇 cm²인가요?`,
+              answerType: 'int',
+              correctKey: `${ans}`,
+              correctDisplayHTML: `${ans} cm²`,
+              choices: this.makeIntChoices(ans, [ans, -d1, d1, -4, 4]),
+              hintHTML: `마름모의 넓이 = <b>(한 대각선) × (다른 대각선) ÷ 2</b><br>(${d1} × ${d2} ÷ 2)를 계산해 보세요!`
+            };
+          }
+        }
+      }
+    }
+
+    // =========================================================================
+    // 4. GAME STATE & ENGINE
+    // =========================================================================
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Persistent Wrong Answer Book in localStorage (safe try/catch)
+    let savedWrongNotes = [];
+    try {
+      const raw = localStorage.getItem('math_survivor_wrong_notes_v1');
+      if (raw) savedWrongNotes = JSON.parse(raw);
+    } catch (e) {}
+
+    function saveWrongNote(item) {
+      savedWrongNotes.unshift(item);
+      if (savedWrongNotes.length > 30) savedWrongNotes.pop();
+      try {
+        localStorage.setItem('math_survivor_wrong_notes_v1', JSON.stringify(savedWrongNotes));
+      } catch (e) {}
+    }
+
+    // Main Game Configuration & State
+    const game = {
+      running: false,
+      paused: true,
+      over: false,
+      unitFilter: 0, // 0 = All units, 1..6 = Specific unit
+      paceMode: 'fast', // 'fast' (2.5x XP) or 'standard'
+      evoRule: 'fast',  // 'fast' (Active Lv8 + Passive Lv1+) or 'strict' (Active Lv8 + Passive Lv8)
+      elapsedTime: 0,
+      kills: 0,
+      spawnTimer: 0,
+      bossSpawnedAt5Min: false,
+      activeBoss: null,
+      spacedRepetitionQueue: [],
+      quizStats: {
+        total: 0,
+        firstTryCorrect: 0,
+        secondTryCorrect: 0,
+        failed: 0,
+        byUnit: {
+          1: { solved: 0, correct: 0 },
+          2: { solved: 0, correct: 0 },
+          3: { solved: 0, correct: 0 },
+          4: { solved: 0, correct: 0 },
+          5: { solved: 0, correct: 0 },
+          6: { solved: 0, correct: 0 }
+        }
+      },
+      player: {
+        x: 0,
+        y: 0,
+        radius: 18,
+        hp: 100,
+        maxHp: 100,
+        speed: 220,
+        level: 1,
+        xp: 0,
+        xpToNext: 5,
+        invincibleTimer: 0,
+        shockwaveVisualTimer: 0,
+        limitBreakAtkBonus: 0,
+        limitBreakSpdBonus: 0,
+        facingAngle: 0,
+        walkPhase: 0,
+        isMoving: false,
+        moveSpeedRatio: 0,
+        stepSide: 1,
+        lastStepPhase: 0,
+        actives: {},  // { weaponId: { level: 1..8, evolved: false, cooldownTimer: 0 } }
+        passives: {}  // { passiveId: { level: 1..8 } }
+      },
+      entities: {
+        enemies: [],
+        bullets: [],
+        boomerangs: [],
+        fireZones: [],
+        lasers: [],
+        lightnings: [],
+        gems: [],
+        floatingTexts: [],
+        particles: [],
+        shockwaves: []
+      }
+    };
+
+    // Input State (Keyboard + Touch/Mouse Virtual Joystick)
+    const keys = {};
+    const joystick = {
+      active: false,
+      startX: 0,
+      startY: 0,
+      currX: 0,
+      currY: 0,
+      dx: 0,
+      dy: 0
+    };
+
+    window.addEventListener('keydown', (e) => {
+      keys[e.code] = true;
+      if (e.code === 'Escape' && game.running && !isAnyModalOpen()) {
+        openPauseModal();
+      }
+    });
+    window.addEventListener('keyup', (e) => {
+      keys[e.code] = false;
+    });
+
+    // Canvas Pointer Controls for Virtual Joystick
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!game.running || game.paused) return;
+      sfx.init();
+      joystick.active = true;
+      joystick.startX = e.clientX;
+      joystick.startY = e.clientY;
+      joystick.currX = e.clientX;
+      joystick.currY = e.clientY;
+      joystick.dx = 0;
+      joystick.dy = 0;
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!joystick.active) return;
+      joystick.currX = e.clientX;
+      joystick.currY = e.clientY;
+      const vx = joystick.currX - joystick.startX;
+      const vy = joystick.currY - joystick.startY;
+      const dist = Math.hypot(vx, vy);
+      if (dist > 6) {
+        joystick.dx = vx / dist;
+        joystick.dy = vy / dist;
+      } else {
+        joystick.dx = 0;
+        joystick.dy = 0;
+      }
+    });
+    window.addEventListener('pointerup', () => {
+      joystick.active = false;
+      joystick.dx = 0;
+      joystick.dy = 0;
+    });
+
+    function isAnyModalOpen() {
+      const modals = ['lobbyModal', 'levelUpModal', 'quizModal', 'comboModal', 'reportModal', 'pauseModal'];
+      return modals.some(id => !document.getElementById(id).classList.contains('hidden'));
+    }
+
+    // =========================================================================
+    // 5. PLAYER STAT HELPERS & HUD RENDERING
+    // =========================================================================
+    function getCooldownMult() {
+      const lv = game.player.passives.stopwatch?.level || 0;
+      return Math.max(0.38, 1 - lv * 0.07);
+    }
+    function getMagnetRange() {
+      const lv = game.player.passives.gcd_magnet?.level || 0;
+      return 115 * (1 + lv * 0.25);
+    }
+    function getProjectileSizeMult() {
+      const lv = game.player.passives.gcd_magnet?.level || 0;
+      return 1 + lv * 0.1;
+    }
+    function getBonusProjectiles() {
+      const lv = game.player.passives.correspondence_ring?.level || 0;
+      return Math.ceil(lv / 2);
+    }
+    function getDamageMult() {
+      const lv = game.player.passives.irreducible_armor?.level || 0;
+      return (1 + lv * 0.12) * (1 + game.player.limitBreakAtkBonus);
+    }
+    function getArmorReduction() {
+      const lv = game.player.passives.irreducible_armor?.level || 0;
+      return Math.min(0.5, lv * 0.05);
+    }
+    function getDurationAndAreaMult() {
+      const lv = game.player.passives.amp_flask?.level || 0;
+      return 1 + lv * 0.15;
+    }
+    function getCritChance() {
+      const lv = game.player.passives.area_tome?.level || 0;
+      return 0.08 + lv * 0.05;
+    }
+    function getCritDamageMult() {
+      const lv = game.player.passives.area_tome?.level || 0;
+      return 1.5 + lv * 0.15;
+    }
+
+    function rollDamage(baseDamage) {
+      let dmg = baseDamage * getDamageMult();
+      const isCrit = Math.random() < getCritChance();
+      if (isCrit) dmg *= getCritDamageMult();
+      return { damage: Math.round(dmg), isCrit };
+    }
+
+    function canEvolveWeapon(weaponId) {
+      const wState = game.player.actives[weaponId];
+      if (!wState || wState.evolved || wState.level < 8) return false;
+      const meta = ACTIVE_WEAPONS[weaponId];
+      const pLevel = game.player.passives[meta.pairId]?.level || 0;
+      const reqPassiveLv = game.evoRule === 'strict' ? 8 : 1;
+      return pLevel >= reqPassiveLv;
+    }
+
+    function updateHUD() {
+      const p = game.player;
+      document.getElementById('hudLevel').textContent = p.level;
+      const xpPct = Math.min(100, Math.round((p.xp / p.xpToNext) * 100));
+      document.getElementById('hudXpBar').style.width = `${xpPct}%`;
+      document.getElementById('hudXpText').textContent = `${p.xp} / ${p.xpToNext} EXP (${xpPct}%)`;
+
+      const unitMeta = MATH_UNITS.find(u => u.id === game.unitFilter) || MATH_UNITS[0];
+      document.getElementById('hudUnitFilterBadge').textContent = `${unitMeta.icon} ${unitMeta.shortName}`;
+
+      // Timer
+      const mins = String(Math.floor(game.elapsedTime / 60)).padStart(2, '0');
+      const secs = String(Math.floor(game.elapsedTime % 60)).padStart(2, '0');
+      document.getElementById('hudTimer').textContent = `${mins}:${secs}`;
+      document.getElementById('hudKills').textContent = game.kills;
+
+      const totalQ = game.quizStats.total;
+      const totalC = game.quizStats.firstTryCorrect + game.quizStats.secondTryCorrect;
+      const acc = totalQ === 0 ? 100 : Math.round((totalC / totalQ) * 100);
+      document.getElementById('hudAccuracy').textContent = `${acc}%`;
+
+      // Active Slots (6)
+      const activeKeys = Object.keys(p.actives);
+      let activeHTML = '';
+      for (let i = 0; i < 6; i++) {
+        const k = activeKeys[i];
+        if (k) {
+          const st = p.actives[k];
+          const meta = ACTIVE_WEAPONS[k];
+          const icon = st.evolved ? meta.evolvedIcon : meta.icon;
+          const borderCls = st.evolved ? 'border-amber-400 bg-amber-500/20' : 'border-cyan-400/60 bg-slate-800';
+          const lvLabel = st.evolved ? '★MAX' : `Lv.${st.level}`;
+          activeHTML += `
+            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg border ${borderCls} flex flex-col items-center justify-center relative" title="${st.evolved ? meta.evolvedName : meta.name} (${lvLabel})">
+              <span class="text-xs sm:text-sm leading-none">${icon}</span>
+              <span class="text-[8px] font-black ${st.evolved ? 'text-amber-300' : 'text-cyan-200'} leading-none mt-0.5">${lvLabel}</span>
+            </div>
+          `;
+        } else {
+          activeHTML += `<div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg border border-slate-800 bg-slate-950/60 flex items-center justify-center text-slate-700 text-xs">·</div>`;
+        }
+      }
+      document.getElementById('hudActiveSlots').innerHTML = activeHTML;
+
+      // Passive Slots (6)
+      const passiveKeys = Object.keys(p.passives);
+      let passiveHTML = '';
+      for (let i = 0; i < 6; i++) {
+        const k = passiveKeys[i];
+        if (k) {
+          const st = p.passives[k];
+          const meta = PASSIVE_ITEMS[k];
+          passiveHTML += `
+            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg border border-amber-500/50 bg-slate-800 flex flex-col items-center justify-center relative" title="${meta.name} (Lv.${st.level})">
+              <span class="text-xs sm:text-sm leading-none">${meta.icon}</span>
+              <span class="text-[8px] font-black text-amber-300 leading-none mt-0.5">Lv.${st.level}</span>
+            </div>
+          `;
+        } else {
+          passiveHTML += `<div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg border border-slate-800 bg-slate-950/60 flex items-center justify-center text-slate-700 text-xs">·</div>`;
+        }
+      }
+      document.getElementById('hudPassiveSlots').innerHTML = passiveHTML;
+
+      // Boss Banner
+      const bossBanner = document.getElementById('bossHudBanner');
+      if (game.activeBoss && game.activeBoss.hp > 0) {
+        bossBanner.classList.remove('hidden');
+        const hpPct = Math.max(0, Math.min(100, (game.activeBoss.hp / game.activeBoss.maxHp) * 100));
+        document.getElementById('bossHpBar').style.width = `${hpPct}%`;
+        const shieldBadge = document.getElementById('bossShieldBadge');
+        const breakBtn = document.getElementById('btnBreakBossShield');
+        if (game.activeBoss.shieldActive) {
+          shieldBadge.classList.remove('hidden');
+          breakBtn.classList.remove('hidden');
+        } else {
+          shieldBadge.classList.add('hidden');
+          breakBtn.classList.add('hidden');
+        }
+      } else {
+        bossBanner.classList.add('hidden');
+      }
+    }
+
+    // =========================================================================
+    // 6. START / RESET GAME & ENEMY / BOSS SPAWNING
+    // =========================================================================
+    function startNewGame() {
+      sfx.init();
+      game.running = true;
+      game.paused = false;
+      game.over = false;
+      game.elapsedTime = 0;
+      game.kills = 0;
+      game.spawnTimer = 0;
+      game.bossSpawnedAt5Min = false;
+      game.activeBoss = null;
+      game.spacedRepetitionQueue = [];
+
+      game.player = {
+        x: 0,
+        y: 0,
+        radius: 18,
+        hp: 100,
+        maxHp: 100,
+        speed: 225,
+        level: 1,
+        xp: 0,
+        xpToNext: 5,
+        invincibleTimer: 2.0,
+        shockwaveVisualTimer: 0,
+        limitBreakAtkBonus: 0,
+        limitBreakSpdBonus: 0,
+        facingAngle: 0,
+        walkPhase: 0,
+        isMoving: false,
+        moveSpeedRatio: 0,
+        stepSide: 1,
+        lastStepPhase: 0,
+        actives: {
+          magic_bullet: { level: 1, evolved: false, cooldownTimer: 0.2 }
+        },
+        passives: {}
+      };
+
+      game.entities = {
+        enemies: [],
+        bullets: [],
+        boomerangs: [],
+        fireZones: [],
+        lasers: [],
+        lightnings: [],
+        gems: [],
+        floatingTexts: [],
+        particles: [],
+        shockwaves: [],
+        footprints: []
+      };
+
+      // Spawn both 3D monster types right away (Type 1: 3D Slime, Type 2: 3D Polygon Golem Walker)
+      for (let i = 0; i < 6; i++) {
+        spawnEnemy(i % 2 === 0 ? 'slime' : 'square');
+      }
+
+      document.getElementById('lobbyModal').classList.add('hidden');
+      document.getElementById('hudContainer').classList.remove('hidden');
+      document.getElementById('joystickHint').classList.remove('hidden');
+      updateHUD();
+    }
+
+    function spawnEnemy(forcedType = null, customPos = null, customNumber = null) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.max(canvas.width, canvas.height) * 0.55 + randInt(40, 140);
+      const x = customPos ? customPos.x : game.player.x + Math.cos(angle) * dist;
+      const y = customPos ? customPos.y : game.player.y + Math.sin(angle) * dist;
+
+      const timeScale = 1 + (game.elapsedTime / 60) * 0.35 + (game.player.level - 1) * 0.08;
+      let type = forcedType;
+      if (!type) {
+        const r = Math.random();
+        if (game.elapsedTime > 35 && r < 0.16) type = 'composite_golem';
+        else if (r < 0.52) type = 'square'; // 3D Type 2: Walking Polygon Mecha Golem
+        else type = 'slime';                // 3D Type 1: Bouncing Horned Jelly Slime
+      }
+
+      if (type === 'slime') {
+        const nums = [2, 3, 5, 7, 11, 13];
+        const num = customNumber || nums[randInt(0, nums.length - 1)];
+        game.entities.enemies.push({
+          type: 'slime',
+          x, y,
+          radius: 15,
+          hp: Math.round(18 * timeScale),
+          maxHp: Math.round(18 * timeScale),
+          speed: randInt(68, 92),
+          damage: 7,
+          color: '#38bdf8',
+          label: `${num}`,
+          xpValue: 1,
+          knockbackX: 0,
+          knockbackY: 0
+        });
+      } else if (type === 'triangle') {
+        game.entities.enemies.push({
+          type: 'triangle',
+          x, y,
+          radius: 16,
+          hp: Math.round(24 * timeScale),
+          maxHp: Math.round(24 * timeScale),
+          speed: randInt(105, 130),
+          damage: 9,
+          color: '#f43f5e',
+          label: '△',
+          xpValue: 2,
+          knockbackX: 0,
+          knockbackY: 0
+        });
+      } else if (type === 'square') {
+        game.entities.enemies.push({
+          type: 'square',
+          x, y,
+          radius: 20,
+          hp: Math.round(52 * timeScale),
+          maxHp: Math.round(52 * timeScale),
+          speed: randInt(58, 75),
+          damage: 12,
+          color: '#a855f7',
+          label: '□',
+          xpValue: 3,
+          knockbackX: 0,
+          knockbackY: 0
+        });
+      } else if (type === 'composite_golem') {
+        // Composite Golem (합성수 골렘 - splits into factors 6 & 4 when defeated!)
+        const numVal = customNumber || 24;
+        const isChild = numVal < 24;
+        game.entities.enemies.push({
+          type: 'composite_golem',
+          x, y,
+          radius: isChild ? 17 : 26,
+          hp: Math.round((isChild ? 35 : 95) * timeScale),
+          maxHp: Math.round((isChild ? 35 : 95) * timeScale),
+          speed: isChild ? 95 : 55,
+          damage: isChild ? 9 : 15,
+          color: isChild ? '#f59e0b' : '#eab308',
+          label: `${numVal}`,
+          compositeNumber: numVal,
+          canSplit: !isChild,
+          xpValue: isChild ? 3 : 8,
+          knockbackX: 0,
+          knockbackY: 0
+        });
+      }
+    }
+
+    function spawnPolygonBoss() {
+      if (game.activeBoss && game.activeBoss.hp > 0) return;
+      sfx.bossAlert();
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 340;
+      const x = game.player.x + Math.cos(angle) * dist;
+      const y = game.player.y + Math.sin(angle) * dist;
+      const hp = Math.round(900 * (1 + game.player.level * 0.18));
+
+      const boss = {
+        type: 'polygon_boss',
+        isBoss: true,
+        x, y,
+        radius: 44,
+        hp,
+        maxHp: hp,
+        speed: 74,
+        damage: 20,
+        color: '#ec4899',
+        label: 'BOSS',
+        shieldActive: true,
+        xpValue: 35,
+        knockbackX: 0,
+        knockbackY: 0
+      };
+      game.entities.enemies.push(boss);
+      game.activeBoss = boss;
+
+      addFloatingText(game.player.x, game.player.y - 50, '👑 정다각형 보스 출현! 결계를 넓이 공식으로 파괴하세요!', '#f43f5e', 18);
+      updateHUD();
+    }
+
+    // =========================================================================
+    // 7. WEAPON FIRING & EVOLUTION MECHANICS (6 PAIRS)
+    // =========================================================================
+    function findNearestEnemy(x, y, maxDist = 900) {
+      let best = null;
+      let bestDist = maxDist;
+      for (const e of game.entities.enemies) {
+        const d = Math.hypot(e.x - x, e.y - y);
+        if (d < bestDist) {
+          bestDist = d;
+          best = e;
+        }
+      }
+      return best;
+    }
+
+    function updateWeapons(dt) {
+      const p = game.player;
+      const cdMult = getCooldownMult();
+      const sizeMult = getProjectileSizeMult();
+      const bonusProj = getBonusProjectiles();
+      const areaMult = getDurationAndAreaMult();
+
+      // 1. 사칙연산 마법탄 / 혼합계산 기관포
+      if (p.actives.magic_bullet) {
+        const w = p.actives.magic_bullet;
+        w.cooldownTimer -= dt;
+        if (w.cooldownTimer <= 0) {
+          const baseCd = w.evolved ? 0.16 : Math.max(0.32, 0.85 - w.level * 0.06);
+          w.cooldownTimer = baseCd * cdMult;
+          const target = findNearestEnemy(p.x, p.y, 800);
+          const baseAngle = target ? Math.atan2(target.y - p.y, target.x - p.x) : Math.random() * Math.PI * 2;
+          const count = (w.evolved ? 3 : 1 + Math.floor(w.level / 3)) + bonusProj;
+          const spread = 0.16;
+          for (let i = 0; i < count; i++) {
+            const offset = (i - (count - 1) / 2) * spread;
+            const ang = baseAngle + offset;
+            const spd = w.evolved ? 640 : 460;
+            const baseDmg = w.evolved ? 42 : (14 + w.level * 5);
+            game.entities.bullets.push({
+              x: p.x,
+              y: p.y,
+              vx: Math.cos(ang) * spd,
+              vy: Math.sin(ang) * spd,
+              radius: (w.evolved ? 9 : 6) * sizeMult,
+              damage: baseDmg,
+              pierce: w.evolved ? 4 : (w.level >= 5 ? 2 : 1),
+              life: 1.6,
+              color: w.evolved ? '#06b6d4' : '#38bdf8',
+              symbol: ['+', '-', '×', '÷'][i % 4],
+              hitIds: new Set()
+            });
+          }
+          sfx.shoot();
+        }
+      }
+
+      // 2. 약수의 부메랑 / 공배수의 거대 차크람
+      if (p.actives.divisor_boomerang) {
+        const w = p.actives.divisor_boomerang;
+        w.cooldownTimer -= dt;
+        if (w.cooldownTimer <= 0) {
+          const baseCd = w.evolved ? 1.35 : Math.max(1.5, 2.6 - w.level * 0.12);
+          w.cooldownTimer = baseCd * cdMult;
+          const count = (w.evolved ? 4 : 1 + Math.floor(w.level / 3)) + bonusProj;
+          for (let i = 0; i < count; i++) {
+            const ang = (Math.PI * 2 * i) / count + game.elapsedTime * 0.7;
+            game.entities.boomerangs.push({
+              x: p.x,
+              y: p.y,
+              angle: ang,
+              speed: w.evolved ? 420 : 340,
+              time: 0,
+              maxTime: (w.evolved ? 2.4 : 1.7) * areaMult,
+              radius: (w.evolved ? 28 : 16) * sizeMult,
+              damage: w.evolved ? 52 : (18 + w.level * 6),
+              evolved: w.evolved,
+              rot: 0,
+              hitCooldowns: new Map()
+            });
+          }
+          sfx.shoot();
+        }
+      }
+
+      // 3. 규칙의 번개 / 함수 뇌우
+      if (p.actives.rule_lightning) {
+        const w = p.actives.rule_lightning;
+        w.cooldownTimer -= dt;
+        if (w.cooldownTimer <= 0) {
+          const baseCd = w.evolved ? 0.95 : Math.max(1.2, 2.4 - w.level * 0.14);
+          w.cooldownTimer = baseCd * cdMult;
+          const strikes = (w.evolved ? 4 : 1 + Math.floor(w.level / 2)) + bonusProj;
+          const candidates = shuffleArray(game.entities.enemies).slice(0, strikes);
+          candidates.forEach((enemy) => {
+            if (!enemy) return;
+            const baseDmg = w.evolved ? 68 : (25 + w.level * 8);
+            const aoeRadius = (w.evolved ? 110 : 65) * areaMult;
+            // Deal damage in radius
+            for (const other of game.entities.enemies) {
+              if (Math.hypot(other.x - enemy.x, other.y - enemy.y) <= aoeRadius) {
+                damageEnemy(other, baseDmg, true, '#facc15');
+              }
+            }
+            game.entities.lightnings.push({
+              x1: p.x, y1: p.y - 260,
+              x2: enemy.x, y2: enemy.y,
+              radius: aoeRadius,
+              evolved: w.evolved,
+              life: 0.35
+            });
+          });
+          if (candidates.length > 0) sfx.shoot();
+        }
+      }
+
+      // 4. 통분의 보호막 / 절대분수 결계 (Continuous orbital orbs + periodic pulse)
+      if (p.actives.common_shield) {
+        const w = p.actives.common_shield;
+        w.orbitAngle = (w.orbitAngle || 0) + dt * (w.evolved ? 4.2 : 2.8);
+        const orbCount = (w.evolved ? 6 : 2 + Math.floor(w.level / 2)) + bonusProj;
+        const orbitDist = (w.evolved ? 105 : 78) * areaMult;
+        const orbRadius = (w.evolved ? 20 : 13) * sizeMult;
+        const baseDmg = w.evolved ? 34 : (10 + w.level * 4);
+
+        w.hitMemory = w.hitMemory || new Map();
+        for (let i = 0; i < orbCount; i++) {
+          const ang = w.orbitAngle + (Math.PI * 2 * i) / orbCount;
+          const ox = p.x + Math.cos(ang) * orbitDist;
+          const oy = p.y + Math.sin(ang) * orbitDist;
+          for (const e of game.entities.enemies) {
+            if (Math.hypot(e.x - ox, e.y - oy) < e.radius + orbRadius) {
+              const lastHit = w.hitMemory.get(e) || 0;
+              if (game.elapsedTime - lastHit > 0.35) {
+                w.hitMemory.set(e, game.elapsedTime);
+                damageEnemy(e, baseDmg, true, '#34d399');
+                // Knockback
+                const kAng = Math.atan2(e.y - p.y, e.x - p.x);
+                e.knockbackX = Math.cos(kAng) * (w.evolved ? 260 : 150);
+                e.knockbackY = Math.sin(kAng) * (w.evolved ? 260 : 150);
+              }
+            }
+          }
+        }
+        // Evolved pulse wave every 2.5s
+        if (w.evolved) {
+          w.cooldownTimer = (w.cooldownTimer || 0) - dt;
+          if (w.cooldownTimer <= 0) {
+            w.cooldownTimer = 2.4 * cdMult;
+            game.entities.shockwaves.push({
+              x: p.x, y: p.y, radius: 15, maxRadius: 190 * areaMult, color: '#10b981', life: 0.4
+            });
+            for (const e of game.entities.enemies) {
+              if (Math.hypot(e.x - p.x, e.y - p.y) <= 190 * areaMult) {
+                damageEnemy(e, 48, true, '#10b981');
+              }
+            }
+          }
+        }
+      }
+
+      // 5. 분수 화염병 / 통분 메테오
+      if (p.actives.fraction_molotov) {
+        const w = p.actives.fraction_molotov;
+        w.cooldownTimer -= dt;
+        if (w.cooldownTimer <= 0) {
+          const baseCd = w.evolved ? 1.4 : Math.max(1.8, 3.0 - w.level * 0.15);
+          w.cooldownTimer = baseCd * cdMult;
+          const count = (w.evolved ? 3 : 1 + Math.floor(w.level / 3)) + Math.ceil(bonusProj / 2);
+          for (let i = 0; i < count; i++) {
+            const ang = Math.random() * Math.PI * 2;
+            const dist = randInt(55, 190);
+            game.entities.fireZones.push({
+              x: p.x + Math.cos(ang) * dist,
+              y: p.y + Math.sin(ang) * dist,
+              radius: (w.evolved ? 88 : 54 + w.level * 4) * areaMult,
+              duration: (w.evolved ? 3.5 : 2.4) * areaMult,
+              tickTimer: 0,
+              damage: w.evolved ? 32 : (9 + w.level * 3),
+              evolved: w.evolved
+            });
+          }
+          sfx.shoot();
+        }
+      }
+
+      // 6. 다각형 레이저 / 정다각형 프리즘
+      if (p.actives.polygon_laser) {
+        const w = p.actives.polygon_laser;
+        w.cooldownTimer -= dt;
+        if (w.cooldownTimer <= 0) {
+          const baseCd = w.evolved ? 1.25 : Math.max(1.4, 2.5 - w.level * 0.14);
+          w.cooldownTimer = baseCd * cdMult;
+          const beamCount = w.evolved ? 8 : (1 + Math.floor(w.level / 4) + bonusProj);
+          const target = findNearestEnemy(p.x, p.y, 900);
+          const startAng = target ? Math.atan2(target.y - p.y, target.x - p.x) : 0;
+          const beamLength = 560 * areaMult;
+          const beamWidth = (w.evolved ? 18 : 11) * sizeMult;
+          const baseDmg = w.evolved ? 62 : (24 + w.level * 7);
+
+          for (let i = 0; i < beamCount; i++) {
+            const ang = startAng + (w.evolved ? (Math.PI * 2 * i) / 8 + game.elapsedTime * 0.5 : (i - (beamCount - 1) / 2) * 0.25);
+            const x2 = p.x + Math.cos(ang) * beamLength;
+            const y2 = p.y + Math.sin(ang) * beamLength;
+            game.entities.lasers.push({
+              x1: p.x, y1: p.y, x2, y2,
+              width: beamWidth,
+              evolved: w.evolved,
+              color: w.evolved ? `hsl(${(i * 45) % 360}, 95%, 62%)` : '#f97316',
+              life: 0.28
+            });
+            // Line-circle collision against enemies
+            for (const e of game.entities.enemies) {
+              const distToBeam = pointToSegmentDistance(e.x, e.y, p.x, p.y, x2, y2);
+              if (distToBeam <= e.radius + beamWidth) {
+                damageEnemy(e, baseDmg, true, '#fb923c');
+              }
+            }
+          }
+          sfx.shoot();
+        }
+      }
+    }
+
+    function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const l2 = dx * dx + dy * dy;
+      if (l2 === 0) return Math.hypot(px - x1, py - y1);
+      let t = ((px - x1) * dx + (py - y1) * dy) / l2;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+    }
+
+    function damageEnemy(enemy, rawBaseDamage, applyRoll = true, particleColor = '#38bdf8') {
+      let dmg = rawBaseDamage;
+      let isCrit = false;
+      if (applyRoll) {
+        const r = rollDamage(rawBaseDamage);
+        dmg = r.damage;
+        isCrit = r.isCrit;
+      }
+      if (enemy.isBoss && enemy.shieldActive) {
+        dmg = Math.max(1, Math.round(dmg * 0.25));
+      }
+      enemy.hp -= dmg;
+      sfx.hit();
+
+      addFloatingText(
+        enemy.x + randInt(-10, 10),
+        enemy.y - enemy.radius,
+        isCrit ? `💥${dmg}!` : `${dmg}`,
+        isCrit ? '#facc15' : '#f8fafc',
+        isCrit ? 16 : 13
+      );
+
+      for (let i = 0; i < 3; i++) {
+        game.entities.particles.push({
+          x: enemy.x,
+          y: enemy.y,
+          vx: randInt(-90, 90),
+          vy: randInt(-90, 90),
+          radius: randInt(2, 4),
+          color: particleColor,
+          life: 0.35
+        });
+      }
+    }
+
+    function addFloatingText(x, y, text, color = '#ffffff', size = 14) {
+      game.entities.floatingTexts.push({
+        x, y, text, color, size, life: 0.75, maxLife: 0.75
+      });
+    }
+
+    // =========================================================================
+    // 8. MAIN UPDATE & RENDER LOOP
+    // =========================================================================
+    let lastTimestamp = performance.now();
+
+    function gameLoop(now) {
+      const dt = Math.min(0.05, (now - lastTimestamp) / 1000);
+      lastTimestamp = now;
+
+      if (game.running && !game.paused && !game.over) {
+        updateGame(dt);
+      }
+      renderGame();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function updateGame(dt) {
+      const p = game.player;
+      game.elapsedTime += dt;
+
+      if (p.invincibleTimer > 0) p.invincibleTimer -= dt;
+      if (p.shockwaveVisualTimer > 0) p.shockwaveVisualTimer -= dt;
+
+      // 5-Minute Mid-Boss Auto Spawn (also triggers at 180s & 300s)
+      if (!game.bossSpawnedAt5Min && game.elapsedTime >= 300) {
+        game.bossSpawnedAt5Min = true;
+        spawnPolygonBoss();
+      }
+
+      // Movement Vector (Keyboard + Virtual Joystick)
+      let mx = 0, my = 0;
+      if (keys['KeyW'] || keys['ArrowUp']) my -= 1;
+      if (keys['KeyS'] || keys['ArrowDown']) my += 1;
+      if (keys['KeyA'] || keys['ArrowLeft']) mx -= 1;
+      if (keys['KeyD'] || keys['ArrowRight']) mx += 1;
+
+      if (joystick.active && (joystick.dx !== 0 || joystick.dy !== 0)) {
+        mx = joystick.dx;
+        my = joystick.dy;
+      } else if (mx !== 0 || my !== 0) {
+        const len = Math.hypot(mx, my);
+        mx /= len;
+        my /= len;
+      }
+
+      const effectiveSpeed = p.speed * (1 + p.limitBreakSpdBonus);
+      p.x += mx * effectiveSpeed * dt;
+      p.y += my * effectiveSpeed * dt;
+
+      // Update 3D Student Walking State & Footprints
+      const moveMag = Math.hypot(mx, my);
+      p.isMoving = moveMag > 0.05;
+      p.moveSpeedRatio = Math.min(1.5, moveMag * (1 + p.limitBreakSpdBonus));
+      if (p.isMoving) {
+        const targetAngle = Math.atan2(mx, my); // In 3D (X=right, Z=down), atan2(mx, my) faces movement direction
+        let diff = targetAngle - (p.facingAngle || 0);
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        p.facingAngle = (p.facingAngle || 0) + diff * Math.min(1, dt * 14);
+
+        const prevCycle = Math.floor(p.walkPhase / Math.PI);
+        p.walkPhase += dt * 11.5 * p.moveSpeedRatio;
+        const currCycle = Math.floor(p.walkPhase / Math.PI);
+
+        // Spawn footprint & dust puff on each step
+        if (currCycle !== prevCycle) {
+          p.stepSide = -p.stepSide;
+          const perpX = Math.cos(p.facingAngle) * 7 * p.stepSide;
+          const perpY = -Math.sin(p.facingAngle) * 7 * p.stepSide;
+          game.entities.footprints = game.entities.footprints || [];
+          game.entities.footprints.push({
+            x: p.x + perpX - mx * 6,
+            y: p.y + perpY - my * 6,
+            angle: p.facingAngle,
+            life: 2.2,
+            maxLife: 2.2
+          });
+          for (let d = 0; d < 3; d++) {
+            game.entities.particles.push({
+              x: p.x + perpX + randInt(-4, 4),
+              y: p.y + perpY + randInt(-4, 4),
+              vx: -mx * randInt(20, 45) + randInt(-20, 20),
+              vy: -my * randInt(20, 45) + randInt(-20, 20),
+              radius: randInt(3, 5),
+              color: 'rgba(148, 163, 184, 0.75)',
+              life: 0.4
+            });
+          }
+        }
+      } else {
+        // Smoothly decay walk phase to neutral stance
+        p.walkPhase += dt * 2.0;
+      }
+
+      if (game.entities.footprints) {
+        for (let i = game.entities.footprints.length - 1; i >= 0; i--) {
+          game.entities.footprints[i].life -= dt;
+          if (game.entities.footprints[i].life <= 0) game.entities.footprints.splice(i, 1);
+        }
+      }
+
+      // Enemy Spawning
+      game.spawnTimer -= dt;
+      if (game.spawnTimer <= 0) {
+        const spawnInterval = Math.max(0.28, 1.15 - (game.elapsedTime / 180) * 0.5);
+        game.spawnTimer = spawnInterval;
+        if (game.entities.enemies.length < 95) {
+          spawnEnemy();
+        }
+      }
+
+      // Update Weapons
+      updateWeapons(dt);
+
+      // Update Bullets
+      for (let i = game.entities.bullets.length - 1; i >= 0; i--) {
+        const b = game.entities.bullets[i];
+        b.x += b.vx * dt;
+        b.y += b.vy * dt;
+        b.life -= dt;
+        if (b.life <= 0) {
+          game.entities.bullets.splice(i, 1);
+          continue;
+        }
+        for (const e of game.entities.enemies) {
+          if (b.hitIds.has(e)) continue;
+          if (Math.hypot(e.x - b.x, e.y - b.y) <= e.radius + b.radius) {
+            b.hitIds.add(e);
+            damageEnemy(e, b.damage, true, b.color);
+            b.pierce -= 1;
+            if (b.pierce <= 0) {
+              game.entities.bullets.splice(i, 1);
+              break;
+            }
+          }
+        }
+      }
+
+      // Update Boomerangs / Giant Chakrams
+      for (let i = game.entities.boomerangs.length - 1; i >= 0; i--) {
+        const bm = game.entities.boomerangs[i];
+        bm.time += dt;
+        bm.rot += dt * 12;
+        if (bm.time >= bm.maxTime) {
+          game.entities.boomerangs.splice(i, 1);
+          continue;
+        }
+        const half = bm.maxTime * 0.5;
+        if (bm.time < half) {
+          const factor = 1 - (bm.time / half) * 0.5;
+          bm.x += Math.cos(bm.angle) * bm.speed * factor * dt;
+          bm.y += Math.sin(bm.angle) * bm.speed * factor * dt;
+        } else {
+          // Return toward player
+          const retAng = Math.atan2(p.y - bm.y, p.x - bm.x);
+          bm.x += Math.cos(retAng) * (bm.speed * 1.15) * dt;
+          bm.y += Math.sin(retAng) * (bm.speed * 1.15) * dt;
+        }
+        for (const e of game.entities.enemies) {
+          const last = bm.hitCooldowns.get(e) || -1;
+          if (bm.time - last > 0.35 && Math.hypot(e.x - bm.x, e.y - bm.y) <= e.radius + bm.radius) {
+            bm.hitCooldowns.set(e, bm.time);
+            damageEnemy(e, bm.damage, true, '#d946ef');
+          }
+        }
+      }
+
+      // Update Fire Zones / Meteors
+      for (let i = game.entities.fireZones.length - 1; i >= 0; i--) {
+        const fz = game.entities.fireZones[i];
+        fz.duration -= dt;
+        fz.tickTimer -= dt;
+        if (fz.duration <= 0) {
+          game.entities.fireZones.splice(i, 1);
+          continue;
+        }
+        if (fz.tickTimer <= 0) {
+          fz.tickTimer = 0.35;
+          for (const e of game.entities.enemies) {
+            if (Math.hypot(e.x - fz.x, e.y - fz.y) <= fz.radius + e.radius) {
+              damageEnemy(e, fz.damage, true, '#fb7185');
+            }
+          }
+        }
+      }
+
+      // Update Lasers & Lightnings & Shockwaves
+      for (let i = game.entities.lasers.length - 1; i >= 0; i--) {
+        game.entities.lasers[i].life -= dt;
+        if (game.entities.lasers[i].life <= 0) game.entities.lasers.splice(i, 1);
+      }
+      for (let i = game.entities.lightnings.length - 1; i >= 0; i--) {
+        game.entities.lightnings[i].life -= dt;
+        if (game.entities.lightnings[i].life <= 0) game.entities.lightnings.splice(i, 1);
+      }
+      for (let i = game.entities.shockwaves.length - 1; i >= 0; i--) {
+        const sw = game.entities.shockwaves[i];
+        sw.life -= dt;
+        sw.radius += (sw.maxRadius - sw.radius) * 8 * dt;
+        if (sw.life <= 0) game.entities.shockwaves.splice(i, 1);
+      }
+
+      // Update Enemies & Check Deaths
+      for (let i = game.entities.enemies.length - 1; i >= 0; i--) {
+        const e = game.entities.enemies[i];
+        if (e.hp <= 0) {
+          game.kills += 1;
+          // Composite Golem Split Gimmick (24 -> 6 and 4)
+          if (e.type === 'composite_golem' && e.canSplit) {
+            addFloatingText(e.x, e.y, '24 = 6 × 4 약수 분열!', '#facc15', 14);
+            spawnEnemy('composite_golem', { x: e.x - 22, y: e.y - 12 }, 6);
+            spawnEnemy('composite_golem', { x: e.x + 22, y: e.y + 12 }, 4);
+          }
+          // Boss defeated
+          if (e.isBoss) {
+            game.activeBoss = null;
+            addFloatingText(e.x, e.y, '👑 보스 처치! 대량 경험치 획득!', '#facc15', 20);
+          }
+          // Drop XP Gem
+          game.entities.gems.push({
+            x: e.x,
+            y: e.y,
+            xp: e.xpValue,
+            color: e.xpValue >= 8 ? '#f43f5e' : (e.xpValue >= 2 ? '#34d399' : '#38bdf8'),
+            radius: e.xpValue >= 8 ? 9 : 6
+          });
+          game.entities.enemies.splice(i, 1);
+          continue;
+        }
+
+        // Move toward player
+        const ang = Math.atan2(p.y - e.y, p.x - e.x);
+        e.x += (Math.cos(ang) * e.speed + e.knockbackX) * dt;
+        e.y += (Math.sin(ang) * e.speed + e.knockbackY) * dt;
+        e.knockbackX *= 0.86;
+        e.knockbackY *= 0.86;
+
+        // Player collision
+        if (Math.hypot(e.x - p.x, e.y - p.y) < e.radius + p.radius) {
+          if (p.invincibleTimer <= 0) {
+            const dmgTaken = Math.max(1, Math.round(e.damage * (1 - getArmorReduction())));
+            p.hp -= dmgTaken;
+            p.invincibleTimer = 0.45;
+            addFloatingText(p.x, p.y - 24, `-${dmgTaken} HP`, '#f43f5e', 15);
+            if (p.hp <= 0) {
+              p.hp = 0;
+              triggerGameOver();
+              return;
+            }
+          }
+        }
+      }
+
+      // Update Experience Gems & Magnetic Pickup
+      const magRange = getMagnetRange();
+      const paceMult = game.paceMode === 'fast' ? 2.5 : 1.0;
+      for (let i = game.entities.gems.length - 1; i >= 0; i--) {
+        const g = game.entities.gems[i];
+        const dist = Math.hypot(p.x - g.x, p.y - g.y);
+        if (dist < magRange) {
+          const ang = Math.atan2(p.y - g.y, p.x - g.x);
+          g.x += Math.cos(ang) * 420 * dt;
+          g.y += Math.sin(ang) * 420 * dt;
+        }
+        if (dist < p.radius + g.radius + 8) {
+          sfx.gem();
+          const gained = Math.max(1, Math.round(g.xp * paceMult));
+          p.xp += gained;
+          game.entities.gems.splice(i, 1);
+          if (p.xp >= p.xpToNext && p.level < 100) {
+            p.xp -= p.xpToNext;
+            triggerLevelUp();
+            break;
+          }
+        }
+      }
+
+      // Particles & Floating Texts
+      for (let i = game.entities.particles.length - 1; i >= 0; i--) {
+        const pt = game.entities.particles[i];
+        pt.x += pt.vx * dt;
+        pt.y += pt.vy * dt;
+        pt.life -= dt;
+        if (pt.life <= 0) game.entities.particles.splice(i, 1);
+      }
+      for (let i = game.entities.floatingTexts.length - 1; i >= 0; i--) {
+        const ft = game.entities.floatingTexts[i];
+        ft.y -= 32 * dt;
+        ft.life -= dt;
+        if (ft.life <= 0) game.entities.floatingTexts.splice(i, 1);
+      }
+
+      updateHUD();
+    }
+
+    // =========================================================================
+    // THREE.JS 3D STUDENT CHARACTER & 3D MAP WORLD
+    // =========================================================================
+    const WORLD_TILT_PITCH = 52 * (Math.PI / 180); // 52 deg 3D camera tilt
+    const WORLD_Y_SCALE = Math.sin(WORLD_TILT_PITCH); // ~0.788 foreshortening for 2.5D/3D ground sync
+
+    const threeWorld = {
+      ready: false,
+      renderer: null,
+      scene: null,
+      camera: null,
+      studentGroup: null,
+      studentRig: {},
+      floorGroup: null,
+      tiles: [],
+      propsGroup: null,
+      propsPool: [],
+      enemiesGroup: null,
+      enemyMeshMap: new Map(),
+      sharedMats: null,
+      dirLight: null
+    };
+
+    function initThreeWorld() {
+      if (typeof THREE === 'undefined') return;
+      try {
+        const threeCanvas = document.getElementById('threeCanvas');
+        const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true, alpha: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x070b19);
+
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const camera = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, -2000, 3500);
+
+        // Lighting
+        const ambLight = new THREE.AmbientLight(0xdbeafe, 0.78);
+        scene.add(ambLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.92);
+        dirLight.position.set(180, 420, 220);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
+        dirLight.shadow.camera.near = 10;
+        dirLight.shadow.camera.far = 1500;
+        const d = 550;
+        dirLight.shadow.camera.left = -d;
+        dirLight.shadow.camera.right = d;
+        dirLight.shadow.camera.top = d;
+        dirLight.shadow.camera.bottom = -d;
+        scene.add(dirLight);
+        scene.add(dirLight.target);
+
+        // 3D Tiled Ground Pool (Scrolls infinitely under the student's feet)
+        const floorGroup = new THREE.Group();
+        scene.add(floorGroup);
+
+        const tileSize = 80;
+        const cols = 22;
+        const rows = 20;
+        const tileGeo = new THREE.BoxGeometry(tileSize - 2, 6, tileSize - 2);
+        const matEven = new THREE.MeshLambertMaterial({ color: 0x0f172a });
+        const matOdd = new THREE.MeshLambertMaterial({ color: 0x131f38 });
+        const matAccent = new THREE.MeshLambertMaterial({ color: 0x172554 });
+
+        const tiles = [];
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const mesh = new THREE.Mesh(tileGeo, matEven);
+            mesh.receiveShadow = true;
+            floorGroup.add(mesh);
+            tiles.push({ mesh, matEven, matOdd, matAccent });
+          }
+        }
+
+        // 3D Map Landmarks Pool (3D Pencils, Number Blocks, Trees/Pillars that pass by as you walk!)
+        const propsGroup = new THREE.Group();
+        scene.add(propsGroup);
+        const propsPool = [];
+        const propColors = [0x38bdf8, 0xa855f7, 0xfacc15, 0x34d399, 0xf43f5e];
+        for (let i = 0; i < 28; i++) {
+          const itemGroup = new THREE.Group();
+          if (i % 3 === 0) {
+            // 3D Giant Math Cube / Block
+            const box = new THREE.Mesh(
+              new THREE.BoxGeometry(22, 26, 22),
+              new THREE.MeshPhongMaterial({ color: propColors[i % propColors.length], shininess: 60 })
+            );
+            box.position.y = 13;
+            box.castShadow = true;
+            box.receiveShadow = true;
+            itemGroup.add(box);
+          } else if (i % 3 === 1) {
+            // 3D Giant Pencil Pillar
+            const body = new THREE.Mesh(
+              new THREE.CylinderGeometry(7, 7, 36, 6),
+              new THREE.MeshPhongMaterial({ color: 0xfacc15 })
+            );
+            body.position.y = 18;
+            body.castShadow = true;
+            const cone = new THREE.Mesh(
+              new THREE.ConeGeometry(7, 14, 6),
+              new THREE.MeshPhongMaterial({ color: 0xfde68a })
+            );
+            cone.position.y = 43;
+            itemGroup.add(body);
+            itemGroup.add(cone);
+          } else {
+            // 3D Schoolyard Low-Poly Tree / Crystal
+            const trunk = new THREE.Mesh(
+              new THREE.CylinderGeometry(4, 5, 16, 7),
+              new THREE.MeshLambertMaterial({ color: 0x78350f })
+            );
+            trunk.position.y = 8;
+            trunk.castShadow = true;
+            const leaves = new THREE.Mesh(
+              new THREE.ConeGeometry(16, 34, 7),
+              new THREE.MeshPhongMaterial({ color: 0x10b981, flatShading: true })
+            );
+            leaves.position.y = 28;
+            leaves.castShadow = true;
+            itemGroup.add(trunk);
+            itemGroup.add(leaves);
+          }
+          propsGroup.add(itemGroup);
+          propsPool.push(itemGroup);
+        }
+
+        // =====================================================================
+        // BUILD 3D ARTICULATED STUDENT CHARACTER MODEL
+        // =====================================================================
+        const studentGroup = new THREE.Group();
+        scene.add(studentGroup);
+
+        const bodyPivot = new THREE.Group();
+        studentGroup.add(bodyPivot);
+
+        // Materials
+        const skinMat = new THREE.MeshPhongMaterial({ color: 0xffdcb5, shininess: 25 });
+        const uniformNavyMat = new THREE.MeshPhongMaterial({ color: 0x1e3a8a, shininess: 40 });
+        const shirtWhiteMat = new THREE.MeshPhongMaterial({ color: 0xf8fafc, shininess: 30 });
+        const tieRedMat = new THREE.MeshPhongMaterial({ color: 0xef4444, shininess: 50 });
+        const hairDarkMat = new THREE.MeshPhongMaterial({ color: 0x1e293b, shininess: 35 });
+        const capYellowMat = new THREE.MeshPhongMaterial({ color: 0xfacc15, shininess: 60 });
+        const bagRedMat = new THREE.MeshPhongMaterial({ color: 0xe11d48, shininess: 65 });
+        const shoeCyanMat = new THREE.MeshPhongMaterial({ color: 0x0284c7, shininess: 50 });
+        const rulerMat = new THREE.MeshPhongMaterial({ color: 0x38bdf8, shininess: 80 });
+
+        // 1. Left & Right Legs (Articulated at Hips)
+        const leftLegPivot = new THREE.Group();
+        leftLegPivot.position.set(-5.5, 16, 0);
+        bodyPivot.add(leftLegPivot);
+
+        const rightLegPivot = new THREE.Group();
+        rightLegPivot.position.set(5.5, 16, 0);
+        bodyPivot.add(rightLegPivot);
+
+        function buildStudentLeg() {
+          const legGroup = new THREE.Group();
+          // Trousers/leg
+          const pant = new THREE.Mesh(new THREE.CylinderGeometry(3.8, 3.2, 12, 12), uniformNavyMat);
+          pant.position.y = -6;
+          pant.castShadow = true;
+          legGroup.add(pant);
+          // White sock cuff
+          const sock = new THREE.Mesh(new THREE.CylinderGeometry(3.3, 3.3, 3, 12), shirtWhiteMat);
+          sock.position.y = -12.5;
+          legGroup.add(sock);
+          // 3D Sneaker
+          const shoe = new THREE.Mesh(new THREE.BoxGeometry(7.2, 5.2, 11.5), shoeCyanMat);
+          shoe.position.set(0, -14.5, 2.2);
+          shoe.castShadow = true;
+          legGroup.add(shoe);
+          const sole = new THREE.Mesh(new THREE.BoxGeometry(7.6, 1.8, 12.0), shirtWhiteMat);
+          sole.position.set(0, -16.5, 2.2);
+          legGroup.add(sole);
+          return legGroup;
+        }
+        leftLegPivot.add(buildStudentLeg());
+        rightLegPivot.add(buildStudentLeg());
+
+        // 2. Torso (School Uniform Blazer + White Collar + Red Necktie)
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(17, 19, 11), uniformNavyMat);
+        torso.position.set(0, 24, 0);
+        torso.castShadow = true;
+        bodyPivot.add(torso);
+
+        const shirtChest = new THREE.Mesh(new THREE.BoxGeometry(7.5, 12, 11.4), shirtWhiteMat);
+        shirtChest.position.set(0, 26.5, 0.2);
+        bodyPivot.add(shirtChest);
+
+        const necktie = new THREE.Mesh(new THREE.BoxGeometry(2.8, 9.5, 11.8), tieRedMat);
+        necktie.position.set(0, 25.5, 0.4);
+        bodyPivot.add(necktie);
+
+        // 3. School Backpack (책가방 on the back + Ruler sticking out!)
+        const backpack = new THREE.Mesh(new THREE.BoxGeometry(15.5, 16.5, 8.5), bagRedMat);
+        backpack.position.set(0, 24.5, -8.5);
+        backpack.castShadow = true;
+        bodyPivot.add(backpack);
+
+        const bagFlap = new THREE.Mesh(new THREE.BoxGeometry(15.8, 6.5, 9.0), capYellowMat);
+        bagFlap.position.set(0, 29.5, -8.5);
+        bodyPivot.add(bagFlap);
+
+        const rulerInBag = new THREE.Mesh(new THREE.BoxGeometry(3.5, 14, 1.2), rulerMat);
+        rulerInBag.position.set(4.5, 34, -8.5);
+        rulerInBag.rotation.z = -0.22;
+        bodyPivot.add(rulerInBag);
+
+        // 4. Left & Right Arms (Articulated at Shoulders + Math Magic Pencil Wand)
+        const leftArmPivot = new THREE.Group();
+        leftArmPivot.position.set(-11, 31, 0);
+        bodyPivot.add(leftArmPivot);
+
+        const rightArmPivot = new THREE.Group();
+        rightArmPivot.position.set(11, 31, 0);
+        bodyPivot.add(rightArmPivot);
+
+        function buildStudentArm(withWand = false) {
+          const armG = new THREE.Group();
+          const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 2.8, 12, 10), uniformNavyMat);
+          sleeve.position.y = -6;
+          sleeve.castShadow = true;
+          armG.add(sleeve);
+
+          const hand = new THREE.Mesh(new THREE.SphereGeometry(3.2, 10, 10), skinMat);
+          hand.position.y = -13;
+          armG.add(hand);
+
+          if (withWand) {
+            // 3D Math Magic Pencil Wand held in right hand
+            const wandGroup = new THREE.Group();
+            wandGroup.position.set(0, -13, 3);
+            wandGroup.rotation.x = Math.PI / 2.2;
+            const shaft = new THREE.Mesh(
+              new THREE.CylinderGeometry(1.4, 1.4, 22, 6),
+              new THREE.MeshPhongMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.4 })
+            );
+            shaft.position.y = 8;
+            wandGroup.add(shaft);
+            const tip = new THREE.Mesh(
+              new THREE.ConeGeometry(2.2, 6, 6),
+              new THREE.MeshPhongMaterial({ color: 0xfacc15, emissive: 0xfacc15, emissiveIntensity: 0.7 })
+            );
+            tip.position.y = 21;
+            wandGroup.add(tip);
+            armG.add(wandGroup);
+          }
+          return armG;
+        }
+        leftArmPivot.add(buildStudentArm(false));
+        rightArmPivot.add(buildStudentArm(true));
+
+        // 5. Head (3D Face, Eyes, Hair & Yellow Student Cap)
+        const headPivot = new THREE.Group();
+        headPivot.position.set(0, 36, 0);
+        bodyPivot.add(headPivot);
+
+        const headMesh = new THREE.Mesh(new THREE.SphereGeometry(10.5, 18, 18), skinMat);
+        headMesh.position.y = 7;
+        headMesh.castShadow = true;
+        headPivot.add(headMesh);
+
+        // Hair
+        const hairBack = new THREE.Mesh(new THREE.SphereGeometry(11.0, 16, 14, 0, Math.PI * 2, 0, Math.PI * 0.65), hairDarkMat);
+        hairBack.position.set(0, 8, -0.8);
+        hairBack.rotation.x = -0.25;
+        headPivot.add(hairBack);
+
+        // Eyes (Facing +Z)
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+        const leftEye = new THREE.Mesh(new THREE.SphereGeometry(1.45, 8, 8), eyeMat);
+        leftEye.position.set(-3.6, 7.2, 9.6);
+        headPivot.add(leftEye);
+
+        const rightEye = new THREE.Mesh(new THREE.SphereGeometry(1.45, 8, 8), eyeMat);
+        rightEye.position.set(3.6, 7.2, 9.6);
+        headPivot.add(rightEye);
+
+        // Rosy Cheeks
+        const cheekMat = new THREE.MeshBasicMaterial({ color: 0xfb7185 });
+        const leftCheek = new THREE.Mesh(new THREE.SphereGeometry(1.3, 8, 8), cheekMat);
+        leftCheek.position.set(-5.8, 5.2, 8.8);
+        headPivot.add(leftCheek);
+        const rightCheek = new THREE.Mesh(new THREE.SphereGeometry(1.3, 8, 8), cheekMat);
+        rightCheek.position.set(5.8, 5.2, 8.8);
+        headPivot.add(rightCheek);
+
+        // Yellow Elementary Student Cap (노란 학생 모자)
+        const capDome = new THREE.Mesh(new THREE.SphereGeometry(11.2, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.52), capYellowMat);
+        capDome.position.set(0, 9.2, 0);
+        capDome.castShadow = true;
+        headPivot.add(capDome);
+
+        const capVisor = new THREE.Mesh(new THREE.CylinderGeometry(11.4, 11.4, 1.6, 16, 1, false, -Math.PI * 0.35, Math.PI * 0.7), capYellowMat);
+        capVisor.position.set(0, 10.2, 3.8);
+        capVisor.rotation.x = 0.15;
+        headPivot.add(capVisor);
+
+        const enemiesGroup = new THREE.Group();
+        scene.add(enemiesGroup);
+
+        // Shared Materials for the 2 Distinct 3D Monster Types (+ Boss)
+        const sharedMats = {
+          // Monster Type 1: 3D Bouncing Horned Jelly Slime (슬라임 몬스터)
+          slimeBody: new THREE.MeshPhongMaterial({ color: 0x06b6d4, emissive: 0x083344, shininess: 95, transparent: true, opacity: 0.92 }),
+          slimeCore: new THREE.MeshPhongMaterial({ color: 0xfef08a, emissive: 0xfacc15, emissiveIntensity: 0.6 }),
+          slimeHorn: new THREE.MeshPhongMaterial({ color: 0xf43f5e, shininess: 70 }),
+          // Monster Type 2: 3D Walking Polygon Mecha-Golem (다각형 보행 골렘 몬스터)
+          golemBodyPurple: new THREE.MeshPhongMaterial({ color: 0x9333ea, emissive: 0x3b0764, shininess: 65, flatShading: true }),
+          golemBodyGold: new THREE.MeshPhongMaterial({ color: 0xeab308, emissive: 0x713f12, shininess: 80, flatShading: true }),
+          golemLimb: new THREE.MeshPhongMaterial({ color: 0x334155, shininess: 50 }),
+          golemSpike: new THREE.MeshPhongMaterial({ color: 0xf43f5e, emissive: 0x881337, shininess: 80, flatShading: true }),
+          golemVisor: new THREE.MeshBasicMaterial({ color: 0xfef08a }),
+          // Boss
+          bossBody: new THREE.MeshPhongMaterial({ color: 0xec4899, emissive: 0x831843, shininess: 90, flatShading: true }),
+          bossRing: new THREE.MeshPhongMaterial({ color: 0xfacc15, emissive: 0xca8a04, shininess: 100 }),
+          // Common eyes
+          eyeWhite: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+          eyePupil: new THREE.MeshBasicMaterial({ color: 0x0f172a }),
+          browAngry: new THREE.MeshBasicMaterial({ color: 0x1e1b4b })
+        };
+
+        threeWorld.ready = true;
+        threeWorld.renderer = renderer;
+        threeWorld.scene = scene;
+        threeWorld.camera = camera;
+        threeWorld.studentGroup = studentGroup;
+        threeWorld.studentRig = {
+          bodyPivot,
+          leftLegPivot,
+          rightLegPivot,
+          leftArmPivot,
+          rightArmPivot,
+          headPivot
+        };
+        threeWorld.floorGroup = floorGroup;
+        threeWorld.tiles = tiles;
+        threeWorld.propsGroup = propsGroup;
+        threeWorld.propsPool = propsPool;
+        threeWorld.enemiesGroup = enemiesGroup;
+        threeWorld.sharedMats = sharedMats;
+        threeWorld.dirLight = dirLight;
+
+        window.addEventListener('resize', () => {
+          if (!threeWorld.ready) return;
+          const nw = window.innerWidth;
+          const nh = window.innerHeight;
+          threeWorld.renderer.setSize(nw, nh);
+          threeWorld.camera.left = -nw / 2;
+          threeWorld.camera.right = nw / 2;
+          threeWorld.camera.top = nh / 2;
+          threeWorld.camera.bottom = -nh / 2;
+          threeWorld.camera.updateProjectionMatrix();
+        });
+      } catch (err) {
+        threeWorld.ready = false;
+      }
+    }
+    initThreeWorld();
+
+        function create3DMonsterMesh(e) {
+      const mats = threeWorld.sharedMats;
+      const root = new THREE.Group();
+      const bodyPivot = new THREE.Group();
+      root.add(bodyPivot);
+
+      if (e.isBoss) {
+        // 3D Polygon Boss: Giant Crowned Octahedron Core + Orbiting Rings
+        const core = new THREE.Mesh(new THREE.OctahedronGeometry(36, 1), mats.bossBody);
+        core.position.y = 38;
+        core.castShadow = true;
+        bodyPivot.add(core);
+
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(48, 3.5, 10, 24), mats.bossRing);
+        ring.position.y = 38;
+        ring.rotation.x = Math.PI / 2.4;
+        bodyPivot.add(ring);
+
+        return { group: root, kind: 'boss', bodyPivot, core, ring };
+      }
+
+      // Determine which of the 2 distinct 3D monster designs to build:
+      // Design 1 ('slime'): 3D Bouncing Horned Jelly Slime Monster (통통 튀는 3D 뿔 슬라임 몬스터)
+      // Design 2 ('golem'): 3D Walking Polygon Mecha-Golem Monster (두 발로 걸어오는 3D 다각형 로봇 골렘 몬스터)
+      if (e.type === 'slime') {
+        // --- 3D MONSTER TYPE 1: HORNED JELLY SLIME ---
+        const slimeShell = new THREE.Mesh(new THREE.SphereGeometry(14.5, 16, 14), mats.slimeBody);
+        slimeShell.position.y = 12;
+        slimeShell.castShadow = true;
+        bodyPivot.add(slimeShell);
+
+        // Glowing Inner Nucleus
+        const innerCore = new THREE.Mesh(new THREE.OctahedronGeometry(6.5, 0), mats.slimeCore);
+        innerCore.position.y = 12;
+        bodyPivot.add(innerCore);
+
+        // Cute/Fierce Top Antenna Horn + Star Tip
+        const horn = new THREE.Mesh(new THREE.ConeGeometry(3.2, 10, 8), mats.slimeHorn);
+        horn.position.set(0, 27, 0);
+        horn.castShadow = true;
+        bodyPivot.add(horn);
+
+        const hornBall = new THREE.Mesh(new THREE.SphereGeometry(2.6, 8, 8), mats.slimeCore);
+        hornBall.position.set(0, 32.5, 0);
+        bodyPivot.add(hornBall);
+
+        // 2 Big 3D Googly Eyes + Angry Brows (Facing +Z)
+        const leftEyeW = new THREE.Mesh(new THREE.SphereGeometry(3.4, 10, 10), mats.eyeWhite);
+        leftEyeW.position.set(-5.2, 14.5, 12.2);
+        bodyPivot.add(leftEyeW);
+        const leftPupil = new THREE.Mesh(new THREE.SphereGeometry(1.8, 8, 8), mats.eyePupil);
+        leftPupil.position.set(-5.2, 14.5, 15.0);
+        bodyPivot.add(leftPupil);
+
+        const rightEyeW = new THREE.Mesh(new THREE.SphereGeometry(3.4, 10, 10), mats.eyeWhite);
+        rightEyeW.position.set(5.2, 14.5, 12.2);
+        bodyPivot.add(rightEyeW);
+        const rightPupil = new THREE.Mesh(new THREE.SphereGeometry(1.8, 8, 8), mats.eyePupil);
+        rightPupil.position.set(5.2, 14.5, 15.0);
+        bodyPivot.add(rightPupil);
+
+        return {
+          group: root,
+          kind: 'slime_3d',
+          bodyPivot,
+          innerCore,
+          phaseOffset: Math.random() * Math.PI * 2
+        };
+      } else {
+        // --- 3D MONSTER TYPE 2: WALKING POLYGON MECHA-GOLEM ---
+        const isComposite = e.type === 'composite_golem';
+        const scaleMult = isComposite ? (e.canSplit ? 1.35 : 0.92) : 1.05;
+        root.scale.set(scaleMult, scaleMult, scaleMult);
+
+        // Articulated Left & Right Legs (Stomping Walk Cycle)
+        const leftLegPivot = new THREE.Group();
+        leftLegPivot.position.set(-6.5, 14, 0);
+        bodyPivot.add(leftLegPivot);
+
+        const rightLegPivot = new THREE.Group();
+        rightLegPivot.position.set(6.5, 14, 0);
+        bodyPivot.add(rightLegPivot);
+
+        function buildGolemLeg() {
+          const lg = new THREE.Group();
+          const thigh = new THREE.Mesh(new THREE.BoxGeometry(5.5, 11, 6.5), mats.golemLimb);
+          thigh.position.y = -5.5;
+          thigh.castShadow = true;
+          lg.add(thigh);
+          const foot = new THREE.Mesh(new THREE.BoxGeometry(7.2, 4.5, 10.5), mats.golemSpike);
+          foot.position.set(0, -12, 2.0);
+          foot.castShadow = true;
+          lg.add(foot);
+          return lg;
+        }
+        leftLegPivot.add(buildGolemLeg());
+        rightLegPivot.add(buildGolemLeg());
+
+        // Faceted 3D Polygon Armor Torso
+        const bodyMat = isComposite ? mats.golemBodyGold : mats.golemBodyPurple;
+        const torso = new THREE.Mesh(new THREE.DodecahedronGeometry(14.5, 0), bodyMat);
+        torso.position.y = 24;
+        torso.castShadow = true;
+        bodyPivot.add(torso);
+
+        // Glowing Cyclops Visor Eye (Facing +Z)
+        const visorPlate = new THREE.Mesh(new THREE.BoxGeometry(14, 5.5, 4), mats.eyePupil);
+        visorPlate.position.set(0, 26, 12.2);
+        bodyPivot.add(visorPlate);
+
+        const visorEye = new THREE.Mesh(new THREE.SphereGeometry(2.6, 10, 10), mats.golemVisor);
+        visorEye.position.set(0, 26, 14.2);
+        bodyPivot.add(visorEye);
+
+        // Left & Right Spiked Shoulder Pads + Swinging Pincer Arms
+        const leftArmPivot = new THREE.Group();
+        leftArmPivot.position.set(-15.5, 27, 0);
+        bodyPivot.add(leftArmPivot);
+
+        const rightArmPivot = new THREE.Group();
+        rightArmPivot.position.set(15.5, 27, 0);
+        bodyPivot.add(rightArmPivot);
+
+        function buildGolemArm(side) {
+          const ag = new THREE.Group();
+          // Pyramid Shoulder Spike
+          const spike = new THREE.Mesh(new THREE.ConeGeometry(5.5, 11, 4), mats.golemSpike);
+          spike.position.set(side * 1.5, 5, 0);
+          spike.rotation.z = -side * 0.45;
+          spike.castShadow = true;
+          ag.add(spike);
+
+          // Heavy Forearm Club
+          const armBox = new THREE.Mesh(new THREE.BoxGeometry(5.5, 14, 6.5), mats.golemLimb);
+          armBox.position.set(0, -6.5, 2);
+          armBox.rotation.x = -0.35;
+          armBox.castShadow = true;
+          ag.add(armBox);
+
+          const claw = new THREE.Mesh(new THREE.ConeGeometry(4.2, 8, 4), mats.golemSpike);
+          claw.position.set(0, -13.5, 5);
+          claw.rotation.x = Math.PI * 0.75;
+          ag.add(claw);
+          return ag;
+        }
+        leftArmPivot.add(buildGolemArm(-1));
+        rightArmPivot.add(buildGolemArm(1));
+
+        return {
+          group: root,
+          kind: 'golem_3d',
+          bodyPivot,
+          leftLegPivot,
+          rightLegPivot,
+          leftArmPivot,
+          rightArmPivot,
+          visorEye,
+          phaseOffset: Math.random() * Math.PI * 2
+        };
+      }
+    }
+
+    function syncAndAnimate3DMonsters() {
+      if (!threeWorld.ready) return;
+      const p = game.player;
+      const activeSet = new Set(game.entities.enemies);
+
+      // Remove meshes for defeated/removed enemies
+      for (const [enemyRef, meshData] of threeWorld.enemyMeshMap.entries()) {
+        if (!activeSet.has(enemyRef)) {
+          threeWorld.enemiesGroup.remove(meshData.group);
+          threeWorld.enemyMeshMap.delete(enemyRef);
+        }
+      }
+
+      // Create or update 3D meshes for all active enemies
+      const t = game.elapsedTime;
+      for (const e of game.entities.enemies) {
+        let m = threeWorld.enemyMeshMap.get(e);
+        if (!m) {
+          m = create3DMonsterMesh(e);
+          threeWorld.enemiesGroup.add(m.group);
+          threeWorld.enemyMeshMap.set(e, m);
+        }
+
+        // Position on 3D floor & face toward student
+        m.group.position.set(e.x, 0, e.y);
+        const angleToStudent = Math.atan2(p.x - e.x, p.y - e.y);
+        m.group.rotation.y = angleToStudent;
+
+        if (m.kind === 'slime_3d') {
+          // 3D Slime: Hopping bounce + jelly squash & stretch
+          const hopPhase = t * 6.8 + m.phaseOffset;
+          const jumpSin = Math.abs(Math.sin(hopPhase));
+          m.bodyPivot.position.y = jumpSin * 13;
+          const stretch = 1 + Math.sin(hopPhase * 2) * 0.16;
+          const squash = 1 / Math.sqrt(stretch);
+          m.bodyPivot.scale.set(squash, stretch, squash);
+          m.innerCore.rotation.y = t * 3.5;
+          m.innerCore.rotation.x = t * 2.2;
+        } else if (m.kind === 'golem_3d') {
+          // 3D Polygon Golem: Heavy stomping walk cycle + swinging pincer arms + torso sway
+          const walkPhase = t * 8.5 + m.phaseOffset;
+          const legSwing = Math.sin(walkPhase) * 0.68;
+          m.leftLegPivot.rotation.x = legSwing;
+          m.rightLegPivot.rotation.x = -legSwing;
+          m.leftArmPivot.rotation.x = -legSwing * 0.85;
+          m.rightArmPivot.rotation.x = legSwing * 0.85;
+          m.bodyPivot.position.y = Math.abs(Math.sin(walkPhase)) * 3.8;
+          m.bodyPivot.rotation.z = Math.cos(walkPhase) * 0.09;
+          m.visorEye.position.x = Math.sin(t * 5 + m.phaseOffset) * 2.5;
+        } else if (m.kind === 'boss') {
+          m.core.rotation.y = t * 1.8;
+          m.core.rotation.z = t * 1.1;
+          m.ring.rotation.z = -t * 2.4;
+          m.bodyPivot.position.y = Math.sin(t * 3) * 6;
+        }
+      }
+    }
+
+    function updateAndRenderThreeWorld() {
+      if (!threeWorld.ready) return;
+      const p = game.player;
+      const rig = threeWorld.studentRig;
+
+      // 1. Position Student at (p.x, 0, p.y)
+      threeWorld.studentGroup.position.set(p.x, 0, p.y);
+      threeWorld.studentGroup.rotation.y = p.facingAngle || 0;
+
+      // 2. Animate Student Walking vs Idle
+      if (p.isMoving) {
+        const swing = Math.sin(p.walkPhase) * 0.72 * Math.min(1.2, p.moveSpeedRatio);
+        const bob = Math.abs(Math.sin(p.walkPhase)) * 5.2;
+        rig.leftLegPivot.rotation.x = swing;
+        rig.rightLegPivot.rotation.x = -swing;
+        rig.leftArmPivot.rotation.x = -swing * 0.9;
+        rig.rightArmPivot.rotation.x = swing * 0.9;
+        rig.bodyPivot.position.y = bob;
+        rig.bodyPivot.rotation.x = 0.14; // Forward lean when walking/running
+        rig.bodyPivot.rotation.z = Math.cos(p.walkPhase) * 0.06;
+        rig.headPivot.rotation.y = Math.sin(p.walkPhase * 0.5) * 0.08;
+      } else {
+        const idleBreath = Math.sin(game.elapsedTime * 3.2);
+        rig.leftLegPivot.rotation.x *= 0.82;
+        rig.rightLegPivot.rotation.x *= 0.82;
+        rig.leftArmPivot.rotation.x = idleBreath * 0.08;
+        rig.rightArmPivot.rotation.x = -idleBreath * 0.08;
+        rig.bodyPivot.position.y = (idleBreath + 1) * 1.2;
+        rig.bodyPivot.rotation.x *= 0.82;
+        rig.bodyPivot.rotation.z = 0;
+      }
+
+      // 3. Update 3D Tiled Ground around (p.x, p.y) so the floor physically moves under feet
+      const tileSize = 80;
+      const cols = 22;
+      const rows = 20;
+      const baseGridX = Math.floor(p.x / tileSize);
+      const baseGridZ = Math.floor(p.y / tileSize);
+      let idx = 0;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const gx = baseGridX + (c - Math.floor(cols / 2));
+          const gz = baseGridZ + (r - Math.floor(rows / 2));
+          const tileObj = threeWorld.tiles[idx++];
+          tileObj.mesh.position.set(gx * tileSize + tileSize * 0.5, -3, gz * tileSize + tileSize * 0.5);
+          const isRoad = (Math.abs(gx) % 6 === 0) || (Math.abs(gz) % 6 === 0);
+          if (isRoad) {
+            tileObj.mesh.material = tileObj.matAccent;
+          } else {
+            tileObj.mesh.material = ((gx + gz) & 1) === 0 ? tileObj.matEven : tileObj.matOdd;
+          }
+        }
+      }
+
+      // 4. Update 3D Map Props (Landmarks scattered on deterministic chunks)
+      const chunkSize = 320;
+      const baseChunkX = Math.floor(p.x / chunkSize);
+      const baseChunkZ = Math.floor(p.y / chunkSize);
+      let propIdx = 0;
+      for (let dz = -2; dz <= 2; dz++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          if (propIdx >= threeWorld.propsPool.length) break;
+          const cx = baseChunkX + dx;
+          const cz = baseChunkZ + dz;
+          // Deterministic hash so landmarks stay fixed on the map as you walk past them!
+          const hash = Math.abs(Math.sin(cx * 127.1 + cz * 311.7) * 43758.5453);
+          const frac1 = hash - Math.floor(hash);
+          const frac2 = (hash * 17.3) - Math.floor(hash * 17.3);
+          const propMesh = threeWorld.propsPool[propIdx++];
+          const wx = (cx + 0.15 + frac1 * 0.7) * chunkSize;
+          const wz = (cz + 0.15 + frac2 * 0.7) * chunkSize;
+          propMesh.position.set(wx, 0, wz);
+          propMesh.rotation.y = (cx + cz) * 0.8;
+        }
+      }
+
+      // 5. Sync & Animate 3D Monsters (2 Distinct 3D Monster Models + 3D Boss)
+      syncAndAnimate3DMonsters();
+
+      // 6. Update Orthographic 3D Camera & Directional Shadow Light
+      const camDist = 1000;
+      threeWorld.camera.position.set(
+        p.x,
+        camDist * Math.sin(WORLD_TILT_PITCH),
+        p.y + camDist * Math.cos(WORLD_TILT_PITCH)
+      );
+      threeWorld.camera.lookAt(p.x, 0, p.y);
+
+      threeWorld.dirLight.position.set(p.x + 180, 420, p.y + 220);
+      threeWorld.dirLight.target.position.set(p.x, 0, p.y);
+
+      threeWorld.renderer.render(threeWorld.scene, threeWorld.camera);
+    }
+
+    function renderGame() {
+      updateAndRenderThreeWorld();
+
+      if (threeWorld.ready) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      } else {
+        ctx.fillStyle = '#070b19';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      const p = game.player;
+
+      ctx.save();
+      // Match 3D Camera foreshortening (WORLD_Y_SCALE) so all 2D ground effects & entities lock 1:1 to the 3D ground!
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.scale(1, WORLD_Y_SCALE);
+      ctx.translate(-p.x, -p.y);
+
+      // Subtle Math Symbols & Footprints on Ground
+      const gridSize = 80;
+      const startX = Math.floor((p.x - canvas.width / 2) / gridSize) * gridSize;
+      const endX = p.x + canvas.width / 2 + gridSize;
+      const startY = Math.floor((p.y - canvas.height / 1.4) / gridSize) * gridSize;
+      const endY = p.y + canvas.height / 1.4 + gridSize;
+
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.10)';
+      ctx.font = 'bold 15px Inter';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const mathGlyphs = ['∑', 'π', '÷', '×', '△', '□'];
+      for (let x = startX; x <= endX; x += gridSize * 2) {
+        for (let y = startY; y <= endY; y += gridSize * 2) {
+          const idx = Math.abs(Math.floor(x / gridSize + y / gridSize)) % mathGlyphs.length;
+          ctx.fillText(mathGlyphs[idx], x + 40, y + 40);
+        }
+      }
+
+      // Draw Student Shoe Footprints on the ground
+      if (game.entities.footprints) {
+        for (const fp of game.entities.footprints) {
+          ctx.save();
+          ctx.translate(fp.x, fp.y);
+          ctx.rotate(-fp.angle);
+          ctx.fillStyle = `rgba(56, 189, 248, ${(fp.life / fp.maxLife) * 0.35})`;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 3.5, 6, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      // Draw Fire Zones / Meteors
+      for (const fz of game.entities.fireZones) {
+        ctx.save();
+        const grad = ctx.createRadialGradient(fz.x, fz.y, 4, fz.x, fz.y, fz.radius);
+        grad.addColorStop(0, fz.evolved ? 'rgba(244, 63, 94, 0.55)' : 'rgba(251, 113, 133, 0.4)');
+        grad.addColorStop(1, 'rgba(244, 63, 94, 0.0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(fz.x, fz.y, fz.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = fz.evolved ? 'rgba(251, 191, 36, 0.7)' : 'rgba(251, 113, 133, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Draw Gems
+      for (const g of game.entities.gems) {
+        ctx.save();
+        ctx.fillStyle = g.color;
+        ctx.shadowColor = g.color;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.moveTo(g.x, g.y - g.radius);
+        ctx.lineTo(g.x + g.radius, g.y);
+        ctx.lineTo(g.x, g.y + g.radius);
+        ctx.lineTo(g.x - g.radius, g.y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Draw Shockwaves
+      for (const sw of game.entities.shockwaves) {
+        ctx.save();
+        ctx.strokeStyle = sw.color;
+        ctx.lineWidth = 4;
+        ctx.globalAlpha = Math.max(0, sw.life * 2);
+        ctx.beginPath();
+        ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Draw Common Shield / Absolute Fraction Barrier Orbs
+      if (p.actives.common_shield) {
+        const w = p.actives.common_shield;
+        const orbCount = (w.evolved ? 6 : 2 + Math.floor(w.level / 2)) + getBonusProjectiles();
+        const orbitDist = (w.evolved ? 105 : 78) * getDurationAndAreaMult();
+        const orbRadius = (w.evolved ? 20 : 13) * getProjectileSizeMult();
+        if (w.evolved) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(16, 185, 129, 0.35)';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, orbitDist, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+        for (let i = 0; i < orbCount; i++) {
+          const ang = (w.orbitAngle || 0) + (Math.PI * 2 * i) / orbCount;
+          const ox = p.x + Math.cos(ang) * orbitDist;
+          const oy = p.y + Math.sin(ang) * orbitDist;
+          ctx.save();
+          ctx.fillStyle = w.evolved ? '#10b981' : '#34d399';
+          ctx.shadowColor = '#10b981';
+          ctx.shadowBlur = 12;
+          ctx.beginPath();
+          ctx.arc(ox, oy, orbRadius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#052e16';
+          ctx.font = 'bold 10px Inter';
+          ctx.fillText('1/n', ox, oy);
+          ctx.restore();
+        }
+      }
+
+      // Draw Bullets
+      for (const b of game.entities.bullets) {
+        ctx.save();
+        ctx.fillStyle = b.color;
+        ctx.shadowColor = b.color;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 10px Inter';
+        ctx.fillText(b.symbol, b.x, b.y);
+        ctx.restore();
+      }
+
+      // Draw Boomerangs / Giant Chakrams
+      for (const bm of game.entities.boomerangs) {
+        ctx.save();
+        ctx.translate(bm.x, bm.y);
+        ctx.rotate(bm.rot);
+        ctx.strokeStyle = bm.evolved ? '#f0abfc' : '#c084fc';
+        ctx.fillStyle = bm.evolved ? 'rgba(217, 70, 239, 0.35)' : 'rgba(168, 85, 247, 0.3)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, bm.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Draw Lasers
+      for (const ls of game.entities.lasers) {
+        ctx.save();
+        ctx.strokeStyle = ls.color;
+        ctx.shadowColor = ls.color;
+        ctx.shadowBlur = 15;
+        ctx.lineWidth = ls.width;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(ls.x1, ls.y1);
+        ctx.lineTo(ls.x2, ls.y2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Draw Lightnings
+      for (const lt of game.entities.lightnings) {
+        ctx.save();
+        ctx.strokeStyle = lt.evolved ? '#fde047' : '#facc15';
+        ctx.shadowColor = '#facc15';
+        ctx.shadowBlur = 16;
+        ctx.lineWidth = lt.evolved ? 4 : 3;
+        ctx.beginPath();
+        ctx.moveTo(lt.x2, lt.y2 - 220);
+        ctx.lineTo(lt.x2 + randInt(-18, 18), lt.y2 - 140);
+        ctx.lineTo(lt.x2 + randInt(-18, 18), lt.y2 - 70);
+        ctx.lineTo(lt.x2, lt.y2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Draw Enemies Ground Shadow, Boss Barrier Ring & Floating Math Number Tag (3D Bodies rendered in Three.js)
+      for (const e of game.entities.enemies) {
+        ctx.save();
+        ctx.translate(e.x, e.y);
+
+        // Ground shadow ellipse under 3D monster
+        ctx.fillStyle = 'rgba(2, 6, 23, 0.5)';
+        ctx.beginPath();
+        ctx.arc(0, 3, e.radius * 0.9, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (e.isBoss && e.shieldActive) {
+          ctx.strokeStyle = '#facc15';
+          ctx.lineWidth = 4;
+          ctx.setLineDash([8, 6]);
+          ctx.beginPath();
+          ctx.arc(0, 0, e.radius + 12, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        if (!threeWorld.ready) {
+          // Fallback 2D shape only if WebGL is unavailable
+          ctx.fillStyle = e.color;
+          ctx.beginPath();
+          ctx.arc(0, 0, e.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Un-foreshorten to draw crisp floating number badge & mini HP bar above the 3D monster
+        ctx.scale(1, 1 / WORLD_Y_SCALE);
+        const labelY = e.isBoss ? -52 : (e.type === 'composite_golem' ? -38 : -30);
+        if (e.type === 'composite_golem' || e.isBoss) {
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+          ctx.strokeStyle = e.isBoss ? '#f43f5e' : '#facc15';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.roundRect(-16, labelY - 9, 32, 18, 6);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#fde047';
+          ctx.font = '900 11px Inter';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(e.label, 0, labelY);
+        }
+        ctx.restore();
+      }
+
+      // Draw Student Ground Ring, Invincibility Shield & HP Bar (3D Student Model rendered via Three.js)
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      // Soft ground shadow & direction ring under student's shoes
+      ctx.fillStyle = 'rgba(2, 6, 23, 0.55)';
+      ctx.beginPath();
+      ctx.arc(0, 4, p.radius + 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 2, p.radius + 4, 0, Math.PI * 2);
+      ctx.stroke();
+
+      if (p.invincibleTimer > 0) {
+        ctx.strokeStyle = 'rgba(250, 204, 21, 0.9)';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(0, 0, p.radius + 12 + Math.sin(game.elapsedTime * 15) * 2, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Un-foreshorten for crisp HP bar below student's feet
+      ctx.scale(1, 1 / WORLD_Y_SCALE);
+      const hpBarW = 48;
+      const hpBarH = 7;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.fillRect(-hpBarW / 2, 22, hpBarW, hpBarH);
+      const hpPct = Math.max(0, p.hp / p.maxHp);
+      ctx.fillStyle = hpPct > 0.4 ? '#22c55e' : '#ef4444';
+      ctx.fillRect(-hpBarW / 2, 22, hpBarW * hpPct, hpBarH);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-hpBarW / 2, 22, hpBarW, hpBarH);
+      ctx.restore();
+
+      // Draw Particles
+      for (const pt of game.entities.particles) {
+        ctx.save();
+        ctx.fillStyle = pt.color;
+        ctx.globalAlpha = Math.max(0, pt.life * 2.5);
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, pt.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Draw Floating Damage Texts
+      for (const ft of game.entities.floatingTexts) {
+        ctx.save();
+        ctx.font = `900 ${ft.size}px 'Noto Sans KR', Inter`;
+        ctx.fillStyle = ft.color;
+        ctx.globalAlpha = Math.max(0, ft.life / ft.maxLife);
+        ctx.textAlign = 'center';
+        ctx.fillText(ft.text, ft.x, ft.y);
+        ctx.restore();
+      }
+
+      ctx.restore();
+
+      // Draw Virtual Joystick Overlay if active
+      if (joystick.active) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(joystick.startX, joystick.startY, 42, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.75)';
+        ctx.beginPath();
+        const clampDist = Math.min(42, Math.hypot(joystick.currX - joystick.startX, joystick.currY - joystick.startY));
+        const ang = Math.atan2(joystick.currY - joystick.startY, joystick.currX - joystick.startX);
+        ctx.arc(joystick.startX + Math.cos(ang) * clampDist, joystick.startY + Math.sin(ang) * clampDist, 18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // =========================================================================
+    // 9. LEVEL-UP 3-CARD SELECTION & EVOLUTION LOGIC
+    // =========================================================================
+    function triggerLevelUp() {
+      sfx.levelUp();
+      game.paused = true;
+      game.player.level = Math.min(100, game.player.level + 1);
+      game.player.xpToNext = Math.round(5 + game.player.level * 4);
+      updateHUD();
+
+      const choices = generateLevelUpChoices();
+      document.getElementById('levelUpTitle').innerHTML =
+        `⚡ LEVEL <span class="text-amber-400">${game.player.level}</span> 능력 선택`;
+
+      const container = document.getElementById('levelUpCardsContainer');
+      container.innerHTML = '';
+
+      choices.forEach((card) => {
+        const isEvolve = card.kind === 'evolve';
+        const borderClass = isEvolve
+          ? 'border-2 border-amber-400 bg-gradient-to-b from-amber-950/90 to-slate-900 evolve-card-anim'
+          : (card.kind === 'active'
+            ? 'border-2 border-cyan-500/60 bg-slate-950/90 hover:border-cyan-300'
+            : 'border-2 border-purple-500/60 bg-slate-950/90 hover:border-purple-300');
+
+        const unitMeta = MATH_UNITS.find(u => u.id === card.unitId) || MATH_UNITS[1];
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `text-left rounded-2xl p-5 flex flex-col justify-between gap-4 transition transform hover:-translate-y-1 ${borderClass}`;
+        btn.innerHTML = `
+          <div>
+            <div class="flex items-center justify-between gap-1 mb-3">
+              <span class="px-2.5 py-1 rounded-full text-xs font-black ${isEvolve ? 'bg-amber-400 text-slate-950' : (card.kind === 'active' ? 'bg-cyan-500/20 text-cyan-300' : 'bg-purple-500/20 text-purple-300')}">
+                ${card.typeBadge}
+              </span>
+              <span class="px-2.5 py-1 rounded-full bg-slate-800 text-slate-200 text-xs font-extrabold">
+                ${unitMeta.shortName}
+              </span>
+            </div>
+            <div class="flex items-center gap-3.5 my-2">
+              <div class="w-14 h-14 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-3xl shrink-0">
+                ${card.icon}
+              </div>
+              <div>
+                <div class="font-black text-lg sm:text-xl text-white leading-tight">${card.title}</div>
+                <div class="text-sm sm:text-base font-extrabold mt-1 ${isEvolve ? 'text-amber-300' : 'text-cyan-400'}">${card.levelText}</div>
+              </div>
+            </div>
+          </div>
+          <div class="pt-3 border-t border-slate-800/90 flex items-center justify-between text-xs sm:text-sm">
+            <span class="${card.pairOwned ? 'text-amber-300 font-black' : 'text-slate-400 font-semibold'}">${card.pairBadgeText}</span>
+            <span class="text-cyan-300 font-black">선택 ➔</span>
+          </div>
+        `;
+        btn.addEventListener('click', () => {
+          document.getElementById('levelUpModal').classList.add('hidden');
+          openMathQuizForCard(card);
+        });
+        container.appendChild(btn);
+      });
+
+      document.getElementById('levelUpModal').classList.remove('hidden');
+    }
+
+    function generateLevelUpChoices() {
+      const p = game.player;
+      const pool = [];
+      const activeCount = Object.keys(p.actives).length;
+      const passiveCount = Object.keys(p.passives).length;
+
+      // 1. Check Evolution Candidates first!
+      for (const wId of Object.keys(p.actives)) {
+        if (canEvolveWeapon(wId)) {
+          const meta = ACTIVE_WEAPONS[wId];
+          const pMeta = PASSIVE_ITEMS[meta.pairId];
+          pool.push({
+            kind: 'evolve',
+            id: wId,
+            unitId: meta.unitId,
+            tier: 3,
+            icon: meta.evolvedIcon,
+            title: meta.evolvedName,
+            typeBadge: '★ 궁극 무기 진화!',
+            levelText: `${meta.name} Lv.8 ➔ ★진화`,
+            desc: meta.evolvedDesc,
+            pairOwned: true,
+            pairBadgeText: `⚡ 짝 완성: ${pMeta.name}`,
+            priority: 100
+          });
+        }
+      }
+
+      // 2. Active Weapons (Upgrade existing or acquire new if < 6)
+      for (const [wId, meta] of Object.entries(ACTIVE_WEAPONS)) {
+        const cur = p.actives[wId];
+        const pMeta = PASSIVE_ITEMS[meta.pairId];
+        const pairLv = p.passives[meta.pairId]?.level || 0;
+        if (cur) {
+          if (!cur.evolved && cur.level < 8) {
+            const nextLv = cur.level + 1;
+            const tier = nextLv <= 4 ? 1 : 2;
+            pool.push({
+              kind: 'active',
+              id: wId,
+              unitId: meta.unitId,
+              tier,
+              icon: meta.icon,
+              title: meta.name,
+              typeBadge: '액티브 무기 강화',
+              levelText: `Lv.${cur.level} ➔ Lv.${nextLv}`,
+              desc: `${meta.desc} (공격력·발사체 강화)`,
+              pairOwned: pairLv > 0,
+              pairBadgeText: pairLv > 0 ? `🔗 짝 보유중: ${pMeta.name} (Lv.${pairLv})` : `짝 패시브: ${pMeta.name}`,
+              priority: nextLv === 8 && pairLv > 0 ? 30 : 10
+            });
+          }
+        } else if (activeCount < 6) {
+          pool.push({
+            kind: 'active',
+            id: wId,
+            unitId: meta.unitId,
+            tier: 1,
+            icon: meta.icon,
+            title: meta.name,
+            typeBadge: '신규 액티브 무기',
+            levelText: '신규 습득 (Lv.1)',
+            desc: meta.desc,
+            pairOwned: pairLv > 0,
+            pairBadgeText: pairLv > 0 ? `🔗 짝 보유중: ${pMeta.name} (Lv.${pairLv})` : `짝 패시브: ${pMeta.name}`,
+            priority: 8
+          });
+        }
+      }
+
+      // 3. Passive Items (Upgrade existing or acquire new if < 6)
+      for (const [pId, meta] of Object.entries(PASSIVE_ITEMS)) {
+        const cur = p.passives[pId];
+        const wMeta = ACTIVE_WEAPONS[meta.pairId];
+        const wLv = p.actives[meta.pairId]?.level || 0;
+        if (cur) {
+          if (cur.level < 8) {
+            const nextLv = cur.level + 1;
+            const tier = nextLv <= 4 ? 1 : 2;
+            pool.push({
+              kind: 'passive',
+              id: pId,
+              unitId: meta.unitId,
+              tier,
+              icon: meta.icon,
+              title: meta.name,
+              typeBadge: '패시브 능력 강화',
+              levelText: `Lv.${cur.level} ➔ Lv.${nextLv}`,
+              desc: meta.desc,
+              pairOwned: wLv > 0,
+              pairBadgeText: wLv > 0 ? `🔗 짝 무기 보유: ${wMeta.name} (Lv.${wLv})` : `짝 무기: ${wMeta.name}`,
+              priority: 9
+            });
+          }
+        } else if (passiveCount < 6) {
+          pool.push({
+            kind: 'passive',
+            id: pId,
+            unitId: meta.unitId,
+            tier: 1,
+            icon: meta.icon,
+            title: meta.name,
+            typeBadge: '신규 패시브 능력',
+            levelText: '신규 습득 (Lv.1)',
+            desc: meta.desc,
+            pairOwned: wLv > 0,
+            pairBadgeText: wLv > 0 ? `🔗 짝 무기 보유: ${wMeta.name} (Lv.${wLv})` : `짝 무기: ${wMeta.name}`,
+            priority: wLv >= 4 ? 18 : 7
+          });
+        }
+      }
+
+      // 4. Limit Break Cards (한계 돌파 - Lv.90~100 or if pool has < 3 items)
+      const limitCards = [
+        {
+          kind: 'limit',
+          id: 'limit_heal',
+          unitId: randInt(1, 6),
+          tier: 2,
+          icon: '💖',
+          title: '최대 체력 응급 회복',
+          typeBadge: '한계 돌파 보너스',
+          levelText: '즉시 HP +30% 회복',
+          desc: '최대 체력의 30%를 즉시 회복하고 전투 지속력을 높입니다.',
+          pairOwned: true,
+          pairBadgeText: '한계 돌파 전용 카드',
+          priority: 1
+        },
+        {
+          kind: 'limit',
+          id: 'limit_atk',
+          unitId: randInt(1, 6),
+          tier: 2,
+          icon: '🔥',
+          title: '전체 공격력 영구 돌파',
+          typeBadge: '한계 돌파 보너스',
+          levelText: '공격력 +5% 영구 증가',
+          desc: '모든 무기와 진화 무기의 최종 피해량이 영구적으로 5% 증가합니다.',
+          pairOwned: true,
+          pairBadgeText: '한계 돌파 전용 카드',
+          priority: 1
+        },
+        {
+          kind: 'limit',
+          id: 'limit_spd',
+          unitId: randInt(1, 6),
+          tier: 2,
+          icon: '👟',
+          title: '이동속도 영구 돌파',
+          typeBadge: '한계 돌파 보너스',
+          levelText: '이동속도 +3% 영구 증가',
+          desc: '캐릭터의 이동속도가 영구적으로 3% 빨라집니다.',
+          pairOwned: true,
+          pairBadgeText: '한계 돌파 전용 카드',
+          priority: 1
+        }
+      ];
+
+      // Always include any evolution card first, then shuffle remaining
+      const evolutions = pool.filter(c => c.kind === 'evolve');
+      const others = shuffleArray(pool.filter(c => c.kind !== 'evolve'));
+      const selected = [...evolutions, ...others].slice(0, 3);
+      while (selected.length < 3) {
+        selected.push(limitCards[selected.length % limitCards.length]);
+      }
+      return selected;
+    }
+
+    // =========================================================================
+    // 10. MATH QUIZ MODAL & SCRATCHPAD & KEYPAD LOGIC
+    // =========================================================================
+    let activeQuizState = null;
+
+    function openMathQuizForCard(card) {
+      // Determine unit: if lobby unitFilter is set (1..6), honor it; otherwise use card's unitId
+      let targetUnit = game.unitFilter !== 0 ? game.unitFilter : card.unitId;
+      let isSpacedRep = false;
+      if (game.spacedRepetitionQueue.length > 0 && card.kind !== 'evolve' && card.kind !== 'boss_shield') {
+        const queued = game.spacedRepetitionQueue.shift();
+        targetUnit = queued.unitId;
+        isSpacedRep = true;
+      }
+
+      const q = MathQuestionGenerator.generate(targetUnit, card.tier || 1);
+      activeQuizState = {
+        card,
+        question: q,
+        attempt: 1,
+        resolved: false,
+        inputMode: 'choice', // 'choice' or 'keypad'
+        kpField: q.answerType === 'frac' ? 'num' : 'whole',
+        kpValues: { whole: '', num: '', den: '' }
+      };
+
+      // Populate UI Badges
+      document.getElementById('quizUnitBadge').textContent = q.unitName;
+      const tierNames = { 1: '기본 문제 (Lv.1~4)', 2: '중급 문제 (Lv.5~7)', 3: '★ 심화·진화 시험 문제' };
+      document.getElementById('quizDiffBadge').textContent = tierNames[q.tier] || '기본 문제';
+      document.getElementById('quizRewardBadge').textContent = `보상: ${card.title}`;
+
+      const spBadge = document.getElementById('quizSpacedRepBadge');
+      if (isSpacedRep) spBadge.classList.remove('hidden');
+      else spBadge.classList.add('hidden');
+
+      document.getElementById('quizAttemptStatus').textContent = '🎯 1차 시도 (단번에 정답 시 충격파 + 3초 무적 보너스!)';
+      document.getElementById('quizAttemptStatus').className = 'font-bold text-emerald-400';
+
+      document.getElementById('quizQuestionText').innerHTML = q.questionHTML;
+      const diagBox = document.getElementById('quizDiagramBox');
+      if (q.diagramHTML) {
+        diagBox.innerHTML = q.diagramHTML;
+        diagBox.classList.remove('hidden');
+      } else {
+        diagBox.classList.add('hidden');
+      }
+
+      document.getElementById('quizHintBox').classList.add('hidden');
+      document.getElementById('quizFeedbackBox').classList.add('hidden');
+
+      renderQuizChoices();
+      configureKeypadForQuestion(q);
+      setQuizInputMode('choice');
+      clearScratchpad();
+
+      document.getElementById('quizModal').classList.remove('hidden');
+      setTimeout(() => resizeScratchpad(), 30);
+    }
+
+    function renderQuizChoices() {
+      const container = document.getElementById('quizChoicesContainer');
+      container.innerHTML = '';
+      const q = activeQuizState.question;
+
+      q.choices.forEach((ch, idx) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'quiz-choice-btn p-3.5 sm:p-4 rounded-2xl bg-slate-950 hover:bg-slate-800 border-2 border-slate-700 hover:border-cyan-400 text-white font-bold text-base sm:text-lg flex items-center gap-3 transition';
+        btn.innerHTML = `
+          <span class="w-7 h-7 rounded-full bg-slate-800 border border-slate-600 text-cyan-300 text-xs font-black flex items-center justify-center shrink-0">${idx + 1}</span>
+          <div class="flex-1 text-center">${ch.labelHTML}</div>
+        `;
+        btn.addEventListener('click', () => {
+          if (activeQuizState.resolved || btn.disabled) return;
+          submitQuizAnswer(ch.valueKey, ch.labelHTML, btn);
+        });
+        container.appendChild(btn);
+      });
+    }
+
+    function configureKeypadForQuestion(q) {
+      const wholeWrap = document.getElementById('kpBoxWholeWrap');
+      const fracWrap = document.getElementById('kpBoxFracWrap');
+      const inst = document.getElementById('keypadFormatInstruction');
+
+      activeQuizState.kpValues = { whole: '', num: '', den: '' };
+      if (q.answerType === 'int') {
+        wholeWrap.classList.remove('hidden');
+        wholeWrap.classList.add('flex');
+        fracWrap.classList.add('hidden');
+        fracWrap.classList.remove('flex');
+        document.getElementById('kpLabelWhole').textContent = '정답 (자연수)';
+        activeQuizState.kpField = 'whole';
+        inst.textContent = '자연수 정답을 입력하고 [정답 제출하기]를 누르세요.';
+      } else if (q.answerType === 'frac') {
+        wholeWrap.classList.add('hidden');
+        wholeWrap.classList.remove('flex');
+        fracWrap.classList.remove('hidden');
+        fracWrap.classList.add('flex');
+        activeQuizState.kpField = 'num';
+        inst.textContent = '분자와 분모 칸을 눌러 숫자를 입력하고 제출하세요.';
+      } else {
+        // mixed fraction
+        wholeWrap.classList.remove('hidden');
+        wholeWrap.classList.add('flex');
+        fracWrap.classList.remove('hidden');
+        fracWrap.classList.add('flex');
+        document.getElementById('kpLabelWhole').textContent = '자연수';
+        activeQuizState.kpField = 'whole';
+        inst.textContent = '대분수의 자연수·분자·분모 칸을 입력하고 제출하세요.';
+      }
+      updateKeypadDisplay();
+    }
+
+    function updateKeypadDisplay() {
+      if (!activeQuizState) return;
+      const v = activeQuizState.kpValues;
+      document.getElementById('kpValWhole').textContent = v.whole || '?';
+      document.getElementById('kpValNum').textContent = v.num || '분자';
+      document.getElementById('kpValDen').textContent = v.den || '분모';
+
+      document.querySelectorAll('.kp-field-btn').forEach(btn => {
+        const f = btn.getAttribute('data-kpfield');
+        if (f === activeQuizState.kpField) {
+          btn.classList.add('border-cyan-400', 'ring-2', 'ring-cyan-400/40');
+          btn.classList.remove('border-slate-700');
+        } else {
+          btn.classList.remove('border-cyan-400', 'ring-2', 'ring-cyan-400/40');
+          btn.classList.add('border-slate-700');
+        }
+      });
+    }
+
+    function setQuizInputMode(mode) {
+      if (!activeQuizState) return;
+      activeQuizState.inputMode = mode;
+      const choiceBtn = document.getElementById('btnModeChoice');
+      const kpBtn = document.getElementById('btnModeKeypad');
+      const choiceArea = document.getElementById('quizChoicesContainer');
+      const kpArea = document.getElementById('quizKeypadContainer');
+
+      if (mode === 'choice') {
+        choiceBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold bg-cyan-600 text-white transition';
+        kpBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
+        if (!activeQuizState.resolved) choiceArea.classList.remove('hidden');
+        kpArea.classList.add('hidden');
+      } else {
+        kpBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold bg-cyan-600 text-white transition';
+        choiceBtn.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
+        choiceArea.classList.add('hidden');
+        if (!activeQuizState.resolved) kpArea.classList.remove('hidden');
+      }
+    }
+
+    function submitQuizAnswer(submittedKey, submittedLabelHTML, clickedButton = null) {
+      if (!activeQuizState || activeQuizState.resolved) return;
+      const q = activeQuizState.question;
+      const isCorrect = submittedKey === q.correctKey;
+
+      if (isCorrect) {
+        activeQuizState.resolved = true;
+        sfx.correct();
+        game.quizStats.total += 1;
+        game.quizStats.byUnit[q.unitId].solved += 1;
+        game.quizStats.byUnit[q.unitId].correct += 1;
+
+        if (activeQuizState.attempt === 1) {
+          game.quizStats.firstTryCorrect += 1;
+        } else {
+          game.quizStats.secondTryCorrect += 1;
+        }
+
+        if (clickedButton) {
+          clickedButton.classList.remove('border-slate-700');
+          clickedButton.classList.add('border-emerald-400', 'bg-emerald-950/70');
+        }
+
+        applyCardReward(activeQuizState.card, true, activeQuizState.attempt === 1);
+
+        const fbBox = document.getElementById('quizFeedbackBox');
+        fbBox.className = 'rounded-2xl p-4 border-2 border-emerald-400 bg-emerald-950/75 text-center';
+        document.getElementById('quizFeedbackTitle').innerHTML =
+          activeQuizState.attempt === 1
+            ? '🎉 단번에 정답! 능력 획득 + 정답 충격파 발동!'
+            : '✅ 2차 시도 정답! 능력을 성공적으로 획득했습니다!';
+        document.getElementById('quizFeedbackDesc').innerHTML =
+          `정답: <b class="text-emerald-300">${q.correctDisplayHTML}</b> · <span class="text-cyan-200">${activeQuizState.card.title}</span> 적용 완료!`;
+        document.getElementById('quizChoicesContainer').classList.add('hidden');
+        document.getElementById('quizKeypadContainer').classList.add('hidden');
+        fbBox.classList.remove('hidden');
+      } else {
+        // Wrong answer!
+        sfx.wrong();
+        if (clickedButton) {
+          clickedButton.disabled = true;
+          clickedButton.classList.remove('border-slate-700');
+          clickedButton.classList.add('border-rose-500', 'bg-rose-950/50', 'opacity-50');
+        }
+
+        if (activeQuizState.attempt === 1) {
+          // Give 1st wrong answer hint + 2nd chance!
+          activeQuizState.attempt = 2;
+          document.getElementById('quizAttemptStatus').textContent = '💡 2차 재도전 기회! 아래 풀이 힌트를 읽고 다시 골라보세요!';
+          document.getElementById('quizAttemptStatus').className = 'font-bold text-amber-300';
+          document.getElementById('quizHintText').innerHTML = q.hintHTML;
+          document.getElementById('quizHintBox').classList.remove('hidden');
+        } else {
+          // 2nd wrong answer -> Fallback heal + record in wrong answer book + queue spaced repetition
+          activeQuizState.resolved = true;
+          game.quizStats.total += 1;
+          game.quizStats.failed += 1;
+          game.quizStats.byUnit[q.unitId].solved += 1;
+
+          saveWrongNote({
+            unitName: q.unitName,
+            questionHTML: q.questionHTML,
+            wrongAnswerHTML: submittedLabelHTML,
+            correctAnswerHTML: q.correctDisplayHTML,
+            hintHTML: q.hintHTML
+          });
+          game.spacedRepetitionQueue.push({ unitId: q.unitId });
+
+          // Fallback reward: +15% HP recovery
+          const healAmt = Math.round(game.player.maxHp * 0.15);
+          game.player.hp = Math.min(game.player.maxHp, game.player.hp + healAmt);
+
+          const fbBox = document.getElementById('quizFeedbackBox');
+          fbBox.className = 'rounded-2xl p-4 border-2 border-amber-400 bg-amber-950/75 text-center';
+          document.getElementById('quizFeedbackTitle').innerHTML =
+            '🌱 아쉬워요! 오답 노트에 기록되고 응급 회복(+15% HP)을 받았습니다';
+          document.getElementById('quizFeedbackDesc').innerHTML =
+            `정답은 <b class="text-amber-300">${q.correctDisplayHTML}</b> 입니다. 몇 레벨 뒤 비슷한 문제로 다시 복습할 수 있어요!`;
+          document.getElementById('quizChoicesContainer').classList.add('hidden');
+          document.getElementById('quizKeypadContainer').classList.add('hidden');
+          fbBox.classList.remove('hidden');
+        }
+      }
+    }
+
+    function applyCardReward(card, success, isFirstTry) {
+      const p = game.player;
+      if (!success) return;
+
+      if (card.kind === 'boss_shield') {
+        if (game.activeBoss) {
+          game.activeBoss.shieldActive = false;
+          const bossDmg = Math.round(game.activeBoss.maxHp * 0.35);
+          game.activeBoss.hp = Math.max(1, game.activeBoss.hp - bossDmg);
+          addFloatingText(game.activeBoss.x, game.activeBoss.y - 40, `🔓 다각형 결계 파괴! -${bossDmg}!`, '#facc15', 20);
+        }
+      } else if (card.kind === 'evolve') {
+        const w = p.actives[card.id];
+        if (w) {
+          w.evolved = true;
+          w.level = 8;
+        }
+      } else if (card.kind === 'active') {
+        if (p.actives[card.id]) {
+          p.actives[card.id].level = Math.min(8, p.actives[card.id].level + 1);
+        } else {
+          p.actives[card.id] = { level: 1, evolved: false, cooldownTimer: 0.1 };
+        }
+      } else if (card.kind === 'passive') {
+        if (p.passives[card.id]) {
+          p.passives[card.id].level = Math.min(8, p.passives[card.id].level + 1);
+        } else {
+          p.passives[card.id] = { level: 1 };
+        }
+      } else if (card.kind === 'limit') {
+        if (card.id === 'limit_heal') {
+          p.hp = Math.min(p.maxHp, p.hp + Math.round(p.maxHp * 0.3));
+        } else if (card.id === 'limit_atk') {
+          p.limitBreakAtkBonus += 0.05;
+        } else if (card.id === 'limit_spd') {
+          p.limitBreakSpdBonus += 0.03;
+        }
+      }
+
+      updateHUD();
+    }
+
+    function closeQuizAndResumeWithCountdown() {
+      const wasFirstTryCorrect = activeQuizState && activeQuizState.resolved && activeQuizState.attempt === 1;
+      document.getElementById('quizModal').classList.add('hidden');
+
+      // Show short 3-2-1 countdown & trigger shockwave + 3s invincibility!
+      const overlay = document.getElementById('countdownOverlay');
+      const numEl = document.getElementById('countdownNumber');
+      const subEl = document.getElementById('countdownSubtext');
+      overlay.classList.remove('hidden');
+      subEl.textContent = wasFirstTryCorrect
+        ? '💥 1차 정답 보너스: 주변 몬스터 충격파 넉백 + 3초 무적 발동!'
+        : '🛡️ 안전 복귀 보호막 가동!';
+
+      let count = 3;
+      numEl.textContent = count;
+      const timer = setInterval(() => {
+        count -= 1;
+        if (count > 0) {
+          numEl.textContent = count;
+        } else {
+          clearInterval(timer);
+          overlay.classList.add('hidden');
+          game.paused = false;
+          game.player.invincibleTimer = wasFirstTryCorrect ? 3.2 : 2.0;
+
+          if (wasFirstTryCorrect) {
+            sfx.shockwave();
+            game.entities.shockwaves.push({
+              x: game.player.x,
+              y: game.player.y,
+              radius: 20,
+              maxRadius: 280,
+              color: '#38bdf8',
+              life: 0.55
+            });
+            // Knockback all nearby monsters + bonus shockwave damage
+            for (const e of game.entities.enemies) {
+              const d = Math.hypot(e.x - game.player.x, e.y - game.player.y);
+              if (d < 320) {
+                const ang = Math.atan2(e.y - game.player.y, e.x - game.player.x);
+                e.knockbackX = Math.cos(ang) * 420;
+                e.knockbackY = Math.sin(ang) * 420;
+                damageEnemy(e, 20 + game.player.level * 3, false, '#38bdf8');
+              }
+            }
+          }
+        }
+      }, 380);
+    }
+
+    // =========================================================================
+    // 11. SCRATCHPAD CANVAS (우측 미니 연습장)
+    // =========================================================================
+    const scratchCanvas = document.getElementById('scratchpadCanvas');
+    const scratchCtx = scratchCanvas.getContext('2d');
+    let scratchDrawing = false;
+    let scratchColor = '#38bdf8';
+
+    function resizeScratchpad() {
+      const rect = scratchCanvas.parentElement.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        scratchCanvas.width = rect.width;
+        scratchCanvas.height = rect.height;
+      }
+    }
+
+    function clearScratchpad() {
+      scratchCtx.clearRect(0, 0, scratchCanvas.width, scratchCanvas.height);
+    }
+
+    function getScratchPos(e) {
+      const rect = scratchCanvas.getBoundingClientRect();
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
+    }
+
+    scratchCanvas.addEventListener('pointerdown', (e) => {
+      scratchDrawing = true;
+      const pos = getScratchPos(e);
+      scratchCtx.beginPath();
+      scratchCtx.moveTo(pos.x, pos.y);
+    });
+    scratchCanvas.addEventListener('pointermove', (e) => {
+      if (!scratchDrawing) return;
+      const pos = getScratchPos(e);
+      scratchCtx.strokeStyle = scratchColor;
+      scratchCtx.lineWidth = 3;
+      scratchCtx.lineCap = 'round';
+      scratchCtx.lineTo(pos.x, pos.y);
+      scratchCtx.stroke();
+    });
+    window.addEventListener('pointerup', () => {
+      scratchDrawing = false;
+    });
+
+    document.querySelectorAll('.scratch-color').forEach(btn => {
+      btn.addEventListener('click', () => {
+        scratchColor = btn.getAttribute('data-pen');
+        document.querySelectorAll('.scratch-color').forEach(b => b.classList.remove('border-2', 'border-white'));
+        btn.classList.add('border-2', 'border-white');
+      });
+    });
+    document.getElementById('btnClearScratchpad').addEventListener('click', clearScratchpad);
+
+    // =========================================================================
+    // 12. MODALS: COMBINATION GUIDE, BATTLE REPORT & PAUSE
+    // =========================================================================
+    function renderComboGuide() {
+      const grid = document.getElementById('comboTableGrid');
+      grid.innerHTML = '';
+      Object.values(ACTIVE_WEAPONS).forEach(w => {
+        const p = PASSIVE_ITEMS[w.pairId];
+        const unit = MATH_UNITS.find(u => u.id === w.unitId);
+        const wOwned = game.player.actives[w.id];
+        const pOwned = game.player.passives[p.id];
+
+        const card = document.createElement('div');
+        card.className = 'bg-slate-950/90 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between gap-2';
+        card.innerHTML = `
+          <div class="flex items-center justify-between text-xs sm:text-sm mb-1">
+            <span class="px-2.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 font-extrabold">${unit.name}</span>
+            <span class="${wOwned?.evolved ? 'text-amber-300 font-black' : 'text-slate-300 font-bold'}">
+              ${wOwned?.evolved ? '★ 진화 완료' : `무기 Lv.${wOwned?.level || 0} · 패시브 Lv.${pOwned?.level || 0}`}
+            </span>
+          </div>
+          <div class="flex items-center justify-between gap-2 bg-slate-900 rounded-xl p-3.5 border border-slate-800/80">
+            <div class="flex items-center gap-2">
+              <span class="text-2xl">${w.icon}</span>
+              <div class="text-sm sm:text-base font-black text-white">${w.name}</div>
+            </div>
+            <span class="text-slate-400 font-black text-lg">+</span>
+            <div class="flex items-center gap-2">
+              <span class="text-2xl">${p.icon}</span>
+              <div class="text-sm sm:text-base font-black text-purple-200">${p.name}</div>
+            </div>
+            <span class="text-amber-400 font-black text-lg">➔</span>
+            <div class="flex items-center gap-2">
+              <span class="text-2xl">${w.evolvedIcon}</span>
+              <div class="text-sm sm:text-base font-black text-amber-300">${w.evolvedName}</div>
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function openComboModal() {
+      game.paused = true;
+      renderComboGuide();
+      document.getElementById('comboModal').classList.remove('hidden');
+    }
+
+    function openReportModal(isGameOver = false) {
+      game.paused = true;
+      const titleEl = document.getElementById('reportTitle');
+      const badgeEl = document.getElementById('reportStateBadge');
+      const closeBtn = document.getElementById('btnCloseReportModal');
+
+      if (isGameOver) {
+        badgeEl.textContent = '💀 GAME OVER - 최종 수학 전투 리포트';
+        badgeEl.className = 'inline-block px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold mb-1';
+        titleEl.textContent = '전투 종료! 오늘 풀었던 수학 문제를 복습해 보세요';
+        closeBtn.classList.add('hidden');
+      } else {
+        badgeEl.textContent = '📊 실시간 수학 전투 리포트 & 오답 노트';
+        badgeEl.className = 'inline-block px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold mb-1';
+        titleEl.textContent = '수학 전투 리포트 및 오답 노트 도감';
+        closeBtn.classList.remove('hidden');
+      }
+
+      const mins = String(Math.floor(game.elapsedTime / 60)).padStart(2, '0');
+      const secs = String(Math.floor(game.elapsedTime % 60)).padStart(2, '0');
+      document.getElementById('repSurvival').textContent = `Lv.${game.player.level} (${mins}:${secs})`;
+      document.getElementById('repKills').textContent = `${game.kills}마리`;
+      document.getElementById('repTotalQuiz').textContent = `${game.quizStats.total}문제`;
+
+      const totalQ = game.quizStats.total;
+      const totalC = game.quizStats.firstTryCorrect + game.quizStats.secondTryCorrect;
+      const acc = totalQ === 0 ? 100 : Math.round((totalC / totalQ) * 100);
+      document.getElementById('repAccuracy').textContent = `${acc}%`;
+
+      // Unit accuracy bars
+      const unitBars = document.getElementById('repUnitBars');
+      unitBars.innerHTML = '';
+      for (let u = 1; u <= 6; u++) {
+        const meta = MATH_UNITS.find(m => m.id === u);
+        const st = game.quizStats.byUnit[u];
+        const uAcc = st.solved === 0 ? 0 : Math.round((st.correct / st.solved) * 100);
+        const bar = document.createElement('div');
+        bar.innerHTML = `
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="font-bold text-slate-200">${meta.icon} ${meta.name}</span>
+            <span class="font-mono text-cyan-300">${st.solved > 0 ? `${st.correct}/${st.solved} (${uAcc}%)` : '미출제'}</span>
+          </div>
+          <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
+            <div class="h-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all" style="width: ${st.solved > 0 ? uAcc : 0}%"></div>
+          </div>
+        `;
+        unitBars.appendChild(bar);
+      }
+
+      renderWrongNoteList();
+      document.getElementById('reportModal').classList.remove('hidden');
+    }
+
+    function renderWrongNoteList() {
+      const listEl = document.getElementById('repWrongList');
+      if (savedWrongNotes.length === 0) {
+        listEl.innerHTML = `
+          <div class="text-center py-6 text-xs text-slate-400">
+            🎉 아직 틀린 문제가 없습니다! 문제를 틀리면 이곳에 풀이 공식과 함께 자동 기록됩니다.
+          </div>
+        `;
+        return;
+      }
+      listEl.innerHTML = '';
+      savedWrongNotes.forEach((item) => {
+        const div = document.createElement('div');
+        div.className = 'bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs space-y-1.5';
+        div.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold text-[10px]">${item.unitName}</span>
+            <span class="text-emerald-300 font-bold">정답: ${item.correctAnswerHTML}</span>
+          </div>
+          <div class="text-slate-200 font-semibold">${item.questionHTML}</div>
+          <div class="text-amber-200/90 bg-slate-950/80 p-2 rounded-lg border border-amber-500/30">
+            💡 <b>핵심 풀이:</b> ${item.hintHTML}
+          </div>
+        `;
+        listEl.appendChild(div);
+      });
+    }
+
+    function triggerGameOver() {
+      game.over = true;
+      game.paused = true;
+      openReportModal(true);
+    }
+
+    function openPauseModal() {
+      game.paused = true;
+      document.getElementById('pauseModal').classList.remove('hidden');
+    }
+
+    // =========================================================================
+    // 13. UI EVENT LISTENERS & INITIALIZATION
+    // =========================================================================
+    function initLobbyUI() {
+      const grid = document.getElementById('unitSelectorGrid');
+      grid.innerHTML = '';
+      MATH_UNITS.forEach((u) => {
+        const isSelected = u.id === game.unitFilter;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `px-4 py-4 rounded-2xl border-2 text-left transition flex items-center justify-between gap-2 ${
+          isSelected
+            ? 'border-cyan-400 bg-cyan-500/20 text-white shadow-lg'
+            : 'border-slate-800 bg-slate-950/85 hover:border-slate-600 text-slate-300'
+        }`;
+        btn.innerHTML = `
+          <span class="font-black text-base sm:text-lg flex items-center gap-2.5 ${isSelected ? 'text-cyan-300' : 'text-white'}">
+            <span class="text-xl sm:text-2xl">${u.icon}</span>
+            <span>${u.name}</span>
+          </span>
+          ${isSelected ? '<span class="px-2.5 py-1 rounded-full bg-cyan-400 text-slate-950 text-xs font-black shrink-0">선택됨</span>' : ''}
+        `;
+        btn.addEventListener('click', () => {
+          game.unitFilter = u.id;
+          initLobbyUI();
+        });
+        grid.appendChild(btn);
+      });
+    }
+
+    // Pace & Evolution Rule Toggle Buttons
+    document.querySelectorAll('.pace-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        game.paceMode = btn.getAttribute('data-pace');
+        document.querySelectorAll('.pace-btn').forEach(b => {
+          const active = b.getAttribute('data-pace') === game.paceMode;
+          b.className = active
+            ? 'pace-btn px-4 py-3.5 rounded-xl border-2 border-cyan-400 bg-cyan-500/20 text-white text-sm sm:text-base font-black text-center transition'
+            : 'pace-btn px-4 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-slate-300 text-sm sm:text-base font-black text-center transition';
+        });
+      });
+    });
+
+    document.querySelectorAll('.evorule-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        game.evoRule = btn.getAttribute('data-evorule');
+        document.querySelectorAll('.evorule-btn').forEach(b => {
+          const active = b.getAttribute('data-evorule') === game.evoRule;
+          b.className = active
+            ? 'evorule-btn px-4 py-3.5 rounded-xl border-2 border-purple-400 bg-purple-500/20 text-white text-sm sm:text-base font-black text-center transition'
+            : 'evorule-btn px-4 py-3.5 rounded-xl border border-slate-700 bg-slate-900 text-slate-300 text-sm sm:text-base font-black text-center transition';
+        });
+      });
+    });
+
+    // Main Buttons
+    document.getElementById('btnStartGame').addEventListener('click', startNewGame);
+    document.getElementById('btnLobbyCombo').addEventListener('click', openComboModal);
+    document.getElementById('btnLobbyWrongNote').addEventListener('click', () => openReportModal(false));
+
+    document.getElementById('btnQuickLevelUp').addEventListener('click', () => {
+      if (!game.running || game.over) return;
+      triggerLevelUp();
+    });
+    document.getElementById('btnSummonBoss').addEventListener('click', () => {
+      if (!game.running || game.over) return;
+      spawnPolygonBoss();
+    });
+    document.getElementById('btnBreakBossShield').addEventListener('click', () => {
+      if (!game.activeBoss || !game.activeBoss.shieldActive) return;
+      game.paused = true;
+      openMathQuizForCard({
+        kind: 'boss_shield',
+        id: 'boss_shield_break',
+        unitId: 6,
+        tier: 3,
+        title: '🔓 보스 다각형 결계 파괴 (체력 35% 즉시 삭감!)'
+      });
+    });
+
+    document.getElementById('btnOpenComboGuide').addEventListener('click', openComboModal);
+    document.getElementById('btnLevelUpViewCombo').addEventListener('click', openComboModal);
+    document.getElementById('btnCloseComboModal').addEventListener('click', () => {
+      document.getElementById('comboModal').classList.add('hidden');
+      if (game.running && !isAnyModalOpen()) game.paused = false;
+    });
+
+    document.getElementById('btnOpenReportHud').addEventListener('click', () => openReportModal(false));
+    document.getElementById('btnCloseReportModal').addEventListener('click', () => {
+      document.getElementById('reportModal').classList.add('hidden');
+      if (game.running && !isAnyModalOpen()) game.paused = false;
+    });
+    document.getElementById('btnRestartFromReport').addEventListener('click', () => {
+      document.getElementById('reportModal').classList.add('hidden');
+      document.getElementById('lobbyModal').classList.remove('hidden');
+    });
+    document.getElementById('btnClearWrongHistory').addEventListener('click', () => {
+      savedWrongNotes = [];
+      try { localStorage.removeItem('math_survivor_wrong_notes_v1'); } catch (e) {}
+      renderWrongNoteList();
+    });
+
+    document.getElementById('btnToggleSound').addEventListener('click', (e) => {
+      sfx.muted = !sfx.muted;
+      e.currentTarget.textContent = sfx.muted ? '🔇' : '🔊';
+    });
+
+    document.getElementById('btnPauseGame').addEventListener('click', openPauseModal);
+    document.getElementById('btnResumeGame').addEventListener('click', () => {
+      document.getElementById('pauseModal').classList.add('hidden');
+      if (!isAnyModalOpen()) game.paused = false;
+    });
+    document.getElementById('btnPauseOpenCombo').addEventListener('click', () => {
+      document.getElementById('pauseModal').classList.add('hidden');
+      openComboModal();
+    });
+    document.getElementById('btnPauseOpenReport').addEventListener('click', () => {
+      document.getElementById('pauseModal').classList.add('hidden');
+      openReportModal(false);
+    });
+    document.getElementById('btnPauseToLobby').addEventListener('click', () => {
+      document.getElementById('pauseModal').classList.add('hidden');
+      document.getElementById('lobbyModal').classList.remove('hidden');
+    });
+
+    // Quiz Modal Controls
+    document.getElementById('btnModeChoice').addEventListener('click', () => setQuizInputMode('choice'));
+    document.getElementById('btnModeKeypad').addEventListener('click', () => setQuizInputMode('keypad'));
+    document.getElementById('btnQuizContinue').addEventListener('click', closeQuizAndResumeWithCountdown);
+
+    document.querySelectorAll('.kp-field-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!activeQuizState) return;
+        activeQuizState.kpField = btn.getAttribute('data-kpfield');
+        updateKeypadDisplay();
+      });
+    });
+
+    document.querySelectorAll('.kp-digit').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!activeQuizState || activeQuizState.resolved) return;
+        const key = btn.getAttribute('data-kpkey');
+        const field = activeQuizState.kpField;
+        if (key === 'clear') {
+          activeQuizState.kpValues = { whole: '', num: '', den: '' };
+        } else if (key === 'back') {
+          activeQuizState.kpValues[field] = activeQuizState.kpValues[field].slice(0, -1);
+        } else {
+          if (activeQuizState.kpValues[field].length < 4) {
+            activeQuizState.kpValues[field] += key;
+          }
+        }
+        updateKeypadDisplay();
+      });
+    });
+
+    document.getElementById('btnSubmitKeypad').addEventListener('click', () => {
+      if (!activeQuizState || activeQuizState.resolved) return;
+      const q = activeQuizState.question;
+      const v = activeQuizState.kpValues;
+      let submittedKey = '';
+      let submittedLabel = '';
+      if (q.answerType === 'int') {
+        if (!v.whole) return;
+        submittedKey = `${parseInt(v.whole, 10)}`;
+        submittedLabel = submittedKey;
+      } else if (q.answerType === 'frac') {
+        if (!v.num || !v.den) return;
+        submittedKey = `0:${parseInt(v.num, 10)}/${parseInt(v.den, 10)}`;
+        submittedLabel = formatFractionHTML(0, v.num, v.den);
+      } else {
+        if (!v.whole || !v.num || !v.den) return;
+        submittedKey = `${parseInt(v.whole, 10)}:${parseInt(v.num, 10)}/${parseInt(v.den, 10)}`;
+        submittedLabel = formatFractionHTML(v.whole, v.num, v.den);
+      }
+      submitQuizAnswer(submittedKey, submittedLabel, null);
+    });
+
+    window.onload = () => {
+      initLobbyUI();
+      requestAnimationFrame((t) => {
+        lastTimestamp = t;
+        gameLoop(t);
+      });
+    };
+  </script>
+</body>
+</html>
